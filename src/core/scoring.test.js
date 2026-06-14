@@ -80,9 +80,11 @@ function buildEmployees() {
   list.push(emp({ id: id++, age: 45, anc: 2, dateSortie: yearsAgo(3) }));
 
   // Sorties récentes (alimentent turnover & motifs)
-  list.push(emp({ id: id++, age: 38, anc: 2, dateSortie: yearsAgo(0, 6), motifLabel: "Démission" }));
+  // Avant-dernière année close (cible du critère turnover) : 2 sorties dont 1 Fin de CDD
+  list.push(emp({ id: id++, age: 38, anc: 2, dateSortie: yearsAgo(0, 6), motifLabel: "Démission" })); // Déc 2025
+  list.push(emp({ id: id++, age: 29, anc: 1, dateSortie: yearsAgo(0, 7), motifLabel: "Fin de CDD" })); // Nov 2025 (à exclure)
+  // Année courante (incomplète) : 2 sorties
   list.push(emp({ id: id++, age: 41, anc: 4, dateSortie: yearsAgo(0, 5), motifLabel: "Démission" }));
-  list.push(emp({ id: id++, age: 29, anc: 1, dateSortie: yearsAgo(0, 4), motifLabel: "Fin de CDD" }));
   list.push(emp({ id: id++, age: 52, anc: 8, dateSortie: yearsAgo(0, 3), motifLabel: "Licenciement éco." }));
 
   // Salariés étrangers — couvre tous les cas du critère titre-sejour
@@ -199,6 +201,29 @@ describe("computeAudit — moteur d'audit RH", () => {
     // Écart = (2000-1800)/2000 = 10% → exactement au seuil vigilance (10%) → conforme
     expect(c.status).toBe("conforme");
     expect(Math.round(c.value)).toBe(10);
+  });
+
+  test("turnover — exclut les fins normales de CDD du numérateur", () => {
+    const c = critById("turnover");
+    expect(c).toBeDefined();
+    // Fixture : avant-dernière année close a 2 sorties (1 Démission + 1 Fin de CDD)
+    // → la Fin de CDD est exclue → 1 sortie subie retenue
+    expect(c.valueLabel).toMatch(/hors fins de CDD/);
+    expect(c.evidence.length).toBe(1);
+    expect(c.evidence[0].motifLabel).toBe("Démission");
+  });
+
+  test("motifs-sortie — statut déclaratif (non noté) et seulement démissions strictes", () => {
+    const c = critById("motifs-sortie");
+    expect(c).toBeDefined();
+    expect(c.status).toBe("declaratif");
+    expect(c.score).toBeNull();
+    expect(c.valueLabel).toMatch(/Top motifs/);
+  });
+
+  test("turnover-sites — supprimé du référentiel", () => {
+    const c = critById("turnover-sites");
+    expect(c).toBeUndefined();
   });
 
   test("cdd-cadre — détecte CDD > 18 mois, pas de chiffrage de risque", () => {

@@ -60,11 +60,6 @@ const ACTION_LIBRARY = {
     charge: 10, deadline: 9, owner: "RH",
     detail: "Cartographier les postes critiques, identifier les binômes, structurer un tutorat ou un parcours d'intégration des successeurs.",
   },
-  "turnover-sites": {
-    action: "Diagnostic spécifique sur le ou les établissements en surchauffe",
-    charge: 6, deadline: 3, owner: "Manager",
-    detail: "Entretiens managériaux sur site, analyse des conditions de travail et de la rotation.",
-  },
   "structure-contrats": {
     action: "Réduction du recours au CDD et CDIsation ciblée",
     charge: 5, deadline: 6, owner: "RH",

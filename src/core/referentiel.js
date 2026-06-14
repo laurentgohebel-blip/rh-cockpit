@@ -582,44 +582,64 @@ export const CRITERIA = [
   {
     id: "turnover",
     domain: "mouvements",
-    label: "Taux de turnover (dernier exercice clos)",
+    label: "Taux de turnover (hors fins de CDD, dernier exercice clos)",
+    legalRef: "Indicateur de rotation — seuils sectoriels ajustables via le profil secteur",
     requiredFields: ["dateEntree"],
-    evaluate({ seuils = SEUILS, metrics: m }) {
+    // Formule simplifiée : sorties exercice clos (hors fins normales CDD/apprentissage/contrat aidé)
+    // divisées par effectif actif actuel. Approximation acceptée (pas d'effectif moyen annuel).
+    evaluate({ seuils = SEUILS, metrics: m, employees }) {
       const ta = m.turnoverAnnuel || [];
       if (!ta.length)
         return { status: STATUS.nonConcluant, value: null, valueLabel: "Pas de mouvements datés", threshold: "", evidence: [] };
-      const last = ta.length >= 2 ? ta[ta.length - 2] : ta[ta.length - 1]; // éviter l'année en cours incomplète
+      // Dernière année close = avant-dernière dans le tableau (évite année en cours)
+      const last = ta.length >= 2 ? ta[ta.length - 2] : ta[ta.length - 1];
+      const anneeClose = +last.annee;
+
+      // Recompte les sorties de l'année close en excluant les fins normales
+      const FIN_NORMALE = /fin de cdd|fin apprentissage|fin contrat aidé|fin contrat aide/i;
+      const CODES_FIN_NORMALE = new Set([20, 31, 81, 84]);
+      const sortiesSubies = (employees || []).filter((e) => {
+        if (!e.dateSortie || e.dateSortie.getFullYear() !== anneeClose) return false;
+        if (e.motifCode != null && CODES_FIN_NORMALE.has(Math.round(e.motifCode))) return false;
+        if (e.motifLabel && FIN_NORMALE.test(e.motifLabel)) return false;
+        return true;
+      });
+
       const n = m.totalActifs;
-      // Taux de rotation = sorties de l'exercice / effectif (pas le `taux` legacy, biaisé)
-      const taux = n ? Math.round((last.sorties / n) * 100) : 0;
-      const status = taux <= seuils.turnover.vigilance ? STATUS.conforme : taux <= seuils.turnover.alerte ? STATUS.vigilance : STATUS.nonConforme;
+      const taux = n ? Math.round((sortiesSubies.length / n) * 100) : 0;
+      const status = taux <= seuils.turnover.vigilance ? STATUS.conforme
+        : taux <= seuils.turnover.alerte ? STATUS.vigilance : STATUS.nonConforme;
+
       return {
         status,
         value: taux,
-        valueLabel: `${taux}% en ${last.annee} (${last.sorties} sorties / ${n} actifs)`,
+        valueLabel: `${taux}% en ${anneeClose} (${sortiesSubies.length} sorties hors fins de CDD / ${n} actifs)`,
         threshold: `≤ ${seuils.turnover.vigilance}%`,
-        evidence: [],
+        evidence: sortiesSubies,
       };
     },
   },
   {
     id: "motifs-sortie",
     domain: "mouvements",
-    label: "Climat social — part des démissions",
+    label: "Part des démissions (indicateur informatif)",
+    legalRef: "Indicateur climat — non noté, pour information de l'auditeur",
     requiredFields: [],
+    // Indicateur informatif (déclaratif) : on calcule le % mais on ne le note pas.
+    // Décision utilisateur : seules les démissions stricto sensu (pas les RC), pas de seuil.
     evaluate({ seuils = SEUILS, metrics: m }) {
       const md = m.motifData || [];
       const total = md.reduce((s, x) => s + x.value, 0);
       if (!total)
         return { status: STATUS.nonConcluant, value: null, valueLabel: "Aucune sortie historisée", threshold: "", evidence: [] };
-      const dem = md.filter((x) => /démission/i.test(x.name)).reduce((s, x) => s + x.value, 0);
+      const dem = md.filter((x) => /^démission$|^demission$/i.test(x.name)).reduce((s, x) => s + x.value, 0);
       const pct = (dem / total) * 100;
-      const status = pct <= seuils.demission.vigilance ? STATUS.conforme : pct <= seuils.demission.alerte ? STATUS.vigilance : STATUS.nonConforme;
+      const topMotifs = md.slice(0, 5).map((m) => `${m.name} (${m.value})`).join(" · ");
       return {
-        status,
+        status: STATUS.declaratif,
         value: pct,
-        valueLabel: `${pct.toFixed(0)}% de démissions (${dem}/${total} sorties)`,
-        threshold: `≤ ${seuils.demission.vigilance}%`,
+        valueLabel: `${pct.toFixed(0)}% de démissions (${dem} / ${total} sorties). Top motifs : ${topMotifs}`,
+        threshold: "indicateur informatif",
         evidence: [],
       };
     },
@@ -641,27 +661,6 @@ export const CRITERIA = [
         valueLabel: `${p60} salarié${p60 > 1 ? "s" : ""} de 60+ dont ${p64} de 64+`,
         threshold: "succession à préparer",
         evidence: actifs.filter((e) => e.age != null && e.age >= RETRAITE_AGES.proche),
-      };
-    },
-  },
-  {
-    id: "turnover-sites",
-    domain: "mouvements",
-    label: "Points chauds de turnover par établissement",
-    requiredFields: ["etab"],
-    evaluate({ seuils = SEUILS, metrics: m }) {
-      const tbe = m.turnoverByEtab || [];
-      if (tbe.length < 2)
-        return { status: STATUS.nonConcluant, value: null, valueLabel: "Établissements insuffisants", threshold: "", evidence: [] };
-      const moy = moyenne(tbe.map((x) => x.taux));
-      const chauds = tbe.filter((x) => x.taux > Math.max(seuils.turnover.alerte, moy * 1.5));
-      const status = chauds.length === 0 ? STATUS.conforme : chauds.length <= 1 ? STATUS.vigilance : STATUS.nonConforme;
-      return {
-        status,
-        value: chauds.length,
-        valueLabel: chauds.length ? `${chauds.length} site(s) en surchauffe : ${chauds.map((c) => c.name).slice(0, 2).join(", ")}` : "Aucun site en surchauffe",
-        threshold: `< ${seuils.turnover.alerte}%`,
-        evidence: [],
       };
     },
   },
