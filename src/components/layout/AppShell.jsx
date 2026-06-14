@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmployeeSearch } from "@/components/audit/EmployeeSearch";
+import { DsnImport } from "@/components/audit/DsnImport";
 import { useData } from "@/context/DataContext";
 import { useBrand } from "@/context/BrandContext";
 import { SECTORS } from "@/core/sectors";
@@ -47,7 +48,7 @@ function NavItem({ to, label, icon: Icon, end }) {
 }
 
 export function AppShell({ children }) {
-  const { employees, audit, fileName, sectorId, setSectorId, reset } = useData();
+  const { employees, audit, fileName, sectorId, setSectorId, reset, dsnMeta } = useData();
   const brand = useBrand();
   const navigate = useNavigate();
 
@@ -122,6 +123,13 @@ export function AppShell({ children }) {
                 </SelectContent>
               </Select>
               <EmployeeSearch employees={employees} onSelect={(e) => navigate(`/data-quality?employee=${e.id}`)} />
+              {dsnMeta ? (
+                <Link to="/audit/sante" className="flex items-center gap-1.5 rounded-md border border-success/30 bg-success-soft/50 px-2.5 py-1.5 text-xs font-medium text-success" title="DSN importée">
+                  <HeartPulse className="h-3.5 w-3.5" />DSN {dsnMeta.mois}
+                </Link>
+              ) : (
+                <DsnImport compact />
+              )}
               <Button variant="outline" size="sm" asChild>
                 <Link to="/rapport"><FileText className="mr-1 h-4 w-4" />Rapport</Link>
               </Button>
