@@ -23,6 +23,20 @@ export function parseDate(d) {
   return isNaN(t) ? null : new Date(t);
 }
 
+// ─── NIR (numéro de sécurité sociale) ───
+// Donnée sensible (RGPD) : utilisée UNIQUEMENT comme clé de jointure avec la DSN.
+// Jamais affichée en UI ni exportée. On garde les chiffres (13 ou 15 avec clé).
+export function normalizeNir(s) {
+  const digits = String(s || "").replace(/\D/g, "");
+  return digits.length >= 13 ? digits.slice(0, 15) : "";
+}
+
+// Clé de rapprochement : les 13 chiffres du NIR (hors clé de contrôle à 2 chiffres).
+export function nirKey(nir) {
+  const d = normalizeNir(nir);
+  return d ? d.slice(0, 13) : "";
+}
+
 export function fmtDate(d) {
   if (!d) return "—";
   return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
@@ -164,6 +178,7 @@ export function parseWithMapping(dataRows, mapping) {
         voie: "",
         pctActivite: gn(r, "pctActivite") || null,
         emploi: g(r, "emploi") || "",
+        nir: normalizeNir(g(r, "nir")),
         nationalite: g(r, "nationalite") || "",
         etranger: gb(r, "etranger"),
         cartesSejourNumero: g(r, "cartesSejourNumero") || "",

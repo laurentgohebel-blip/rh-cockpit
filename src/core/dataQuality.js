@@ -18,6 +18,7 @@ const COMPLETENESS_FIELDS = [
   { field: "etab", label: "Établissement", filled: (e) => !!e.etab },
   { field: "ville", label: "Ville", filled: (e) => !!e.ville },
   { field: "emploi", label: "Emploi / libellé poste", filled: (e) => !!e.emploi },
+  { field: "nir", label: "N° sécurité sociale (clé DSN)", filled: (e) => !!e.nir },
   { field: "nationalite", label: "Nationalité", filled: (e) => !!e.nationalite },
   { field: "etranger", label: "Étranger (oui/non)", filled: (e) => e.etranger != null },
   { field: "cartesSejourNumero", label: "N° carte de séjour", filled: (e) => !!e.cartesSejourNumero },
