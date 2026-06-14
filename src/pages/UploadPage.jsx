@@ -1,12 +1,13 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload as UploadIcon, FileSpreadsheet, ShieldCheck } from "lucide-react";
+import { Upload as UploadIcon, FileSpreadsheet, ShieldCheck, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { readExcelFile, parseWithMapping } from "@/core/parser";
 import { detectProfile, applyProfileMapping, autoMapColumns, FIELDS, PROFILES } from "@/core/profiles";
 import { loadMapping } from "@/core/storage";
+import { generateDemoEmployees, DEMO_FILENAME } from "@/core/demoData";
 import { useData } from "@/context/DataContext";
 import { cn } from "@/lib/utils";
 
@@ -83,6 +84,20 @@ export default function UploadPage() {
     handleFile(e.dataTransfer.files?.[0]);
   };
 
+  const handleDemo = useCallback(() => {
+    setBusy(true);
+    try {
+      const employees = generateDemoEmployees();
+      ingest(employees, DEMO_FILENAME, null, "demo");
+      toast.success(`Données de démonstration chargées · ${employees.filter((e) => e.actif).length} salariés actifs`);
+      navigate("/audit");
+    } catch (e) {
+      toast.error("Erreur lors du chargement de la démo : " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [ingest, navigate]);
+
   return (
     <div className="mx-auto max-w-2xl py-16">
       <div className="mb-8 text-center">
@@ -118,6 +133,29 @@ export default function UploadPage() {
           </Button>
         </label>
         <p className="mt-4 text-xs text-muted-foreground">Formats supportés : .xlsx, .xls</p>
+      </Card>
+
+      {/* Démo */}
+      <div className="my-6 flex items-center gap-3">
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">ou</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
+      <Card className="flex items-center gap-4 border-info/30 bg-info-soft/30 p-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-info/10">
+          <Sparkles className="h-5 w-5 text-info" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Pas de fichier sous la main ?</p>
+          <p className="text-xs text-muted-foreground">
+            Découvrez l'outil avec un jeu de données fictif (≈ 150 salariés, anonymisé). Idéal pour les démos commerciales.
+          </p>
+        </div>
+        <Button onClick={handleDemo} disabled={busy} variant="outline">
+          <Sparkles className="mr-1 h-4 w-4" />
+          Charger une démo
+        </Button>
       </Card>
 
       <div className="mt-8 grid grid-cols-3 gap-4">
