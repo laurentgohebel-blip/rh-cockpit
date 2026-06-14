@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Scale, Coins, ArrowRightLeft, Users, Bell, Database,
-  BarChart3, Settings, RotateCcw, FileText, ListChecks,
+  BarChart3, Settings, RotateCcw, FileText, ListChecks, HeartPulse,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +16,7 @@ const AUDIT_NAV = [
   { to: "/audit", label: "Synthèse", icon: LayoutDashboard, end: true },
   { to: "/audit/conformite", label: "Conformité", icon: Scale },
   { to: "/audit/remuneration", label: "Rémunération", icon: Coins },
+  { to: "/audit/sante", label: "Santé & absentéisme", icon: HeartPulse },
   { to: "/audit/mouvements", label: "Mouvements", icon: ArrowRightLeft },
   { to: "/audit/effectifs", label: "Effectifs", icon: Users },
 ];

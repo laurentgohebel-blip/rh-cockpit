@@ -152,6 +152,37 @@ export function parseDsn(text) {
   return { meta, individus };
 }
 
+// ─── Croisement DSN ↔ snapshot paie (par NIR) ───
+// Attache à chaque salarié rapproché un objet `dsn` exploitable par les critères.
+export function enrichWithDsn(employees, dsn) {
+  if (!dsn || !dsn.individus?.length) return { employees, matched: 0, coverage: 0 };
+  const byKey = new Map();
+  dsn.individus.forEach((i) => { if (i.nirKey) byKey.set(i.nirKey, i); });
+
+  let matched = 0;
+  const enriched = employees.map((e) => {
+    const key = nirKey(e.nir);
+    const ind = key ? byKey.get(key) : null;
+    if (!ind) return e;
+    matched++;
+    const c = ind.contrats[0] || {};
+    return {
+      ...e,
+      dsn: {
+        arrets: ind.arrets,
+        suspensions: ind.suspensions,
+        brut: ind.versement.brut,
+        netVerse: ind.versement.netVerse,
+        pcs: c.pcs || "",
+        natureDsn: c.nature || "",
+        quotiteRef: c.quotiteRef,
+        quotiteTravail: c.quotiteTravail,
+      },
+    };
+  });
+  return { employees: enriched, matched, coverage: employees.length ? matched / employees.length : 0 };
+}
+
 // ─── Agrégats d'audit ───
 export function dsnAggregates(dsn) {
   const inds = dsn.individus;

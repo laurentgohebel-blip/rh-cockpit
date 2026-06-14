@@ -44,6 +44,7 @@ function emp(o) {
     cartesSejourFin: o.cartesSejourFin || null,
     cartesTravailNumero: o.cartesTravailNumero || "",
     cartesTravailFin: o.cartesTravailFin || null,
+    dsn: o.dsn,
   };
 }
 
@@ -119,11 +120,34 @@ describe("computeAudit — moteur d'audit RH", () => {
   const audit = computeAudit(metrics, { sourceFile: "test.xlsx", profileId: "quadratus" });
   const critById = (id) => audit.domains.flatMap((d) => d.criteria).find((c) => c.id === id);
 
-  test("retourne un index global borné et 4 domaines", () => {
-    expect(audit.domains).toHaveLength(4);
+  test("retourne un index global borné et 5 domaines", () => {
+    expect(audit.domains).toHaveLength(5);
     expect(audit.globalScore).toBeGreaterThanOrEqual(0);
     expect(audit.globalScore).toBeLessThanOrEqual(100);
-    expect(audit.domains.map((d) => d.key).sort()).toEqual(["conformite", "effectifs", "mouvements", "remuneration"]);
+    expect(audit.domains.map((d) => d.key).sort()).toEqual(["conformite", "effectifs", "mouvements", "remuneration", "sante"]);
+  });
+
+  test("domaine santé : non concluant sans DSN, exclu du score global", () => {
+    // La fixture principale n'a pas de données DSN → tous les critères santé non concluants
+    const sante = audit.domains.find((d) => d.key === "sante");
+    expect(sante.score).toBeNull();
+    expect(sante.criteria.every((c) => c.status === "non-concluant")).toBe(true);
+    // Le score global reste calculé sur les autres domaines
+    expect(audit.globalScore).toBeGreaterThan(0);
+  });
+
+  test("domaine santé : alimenté quand les salariés portent des données DSN", () => {
+    const fixture = [
+      emp({ id: 950, age: 40, anc: 5, dsn: { arrets: [{ motif: "01", motifLabel: "Maladie", jours: 14 }] } }),
+      emp({ id: 951, age: 35, anc: 3, dsn: { arrets: [] } }),
+      emp({ id: 952, age: 45, anc: 8, dsn: { arrets: [{ motif: "05", motifLabel: "Accident du travail", jours: 20 }] } }),
+    ];
+    const a = computeAudit(computeMetrics(fixture));
+    const sante = a.domains.find((d) => d.key === "sante");
+    expect(sante.score).not.toBeNull();
+    const at = sante.criteria.find((c) => c.id === "accidents-travail");
+    expect(at.status).toBe("vigilance"); // 1 AT
+    expect(at.value).toBe(1);
   });
 
   test("OETH non conforme + risque AGEFIPH chiffré (idée ①)", () => {

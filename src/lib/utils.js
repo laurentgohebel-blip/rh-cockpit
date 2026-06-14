@@ -16,3 +16,12 @@ export const fmtDateFr = (d) => {
   if (isNaN(dt)) return "—";
   return dt.toLocaleDateString("fr-FR");
 };
+
+const MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+// Date DSN « JJMMAAAA » (mois principal déclaré) → « janvier 2026 »
+export const fmtDsnMois = (s) => {
+  const d = String(s || "").trim();
+  if (!/^\d{8}$/.test(d)) return "—";
+  return `${MOIS_FR[+d.slice(2, 4) - 1] || "?"} ${d.slice(4, 8)}`;
+};

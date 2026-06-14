@@ -5,6 +5,8 @@ const KEY_FILENAME = "rh-cockpit-filename";
 const KEY_API_KEY = "rh-cockpit-apikey";
 const KEY_MAPPING = "rh-cockpit-mapping";
 const KEY_PROFILE = "rh-cockpit-profile";
+const KEY_DSN_TEXT = "rh-cockpit-dsn-text";
+const KEY_DSN_FILENAME = "rh-cockpit-dsn-filename";
 
 export async function saveEmployees(employees, fileName) {
   // Serialize dates to ISO strings for storage
@@ -47,6 +49,8 @@ export async function clearEmployees() {
   // du modèle) reste utilisé au prochain upload et masque silencieusement les colonnes.
   await del(KEY_MAPPING);
   await del(KEY_PROFILE);
+  await del(KEY_DSN_TEXT);
+  await del(KEY_DSN_FILENAME);
 }
 
 export async function saveApiKey(key) {
@@ -66,4 +70,22 @@ export async function loadMapping() {
   const mapping = await get(KEY_MAPPING);
   const profileId = await get(KEY_PROFILE);
   return mapping ? { mapping, profileId } : null;
+}
+
+// ─── DSN — on stocke le texte brut et on re-parse au chargement (évite la
+// sérialisation des structures imbriquées avec Dates) ───
+export async function saveDsn(text, fileName) {
+  await set(KEY_DSN_TEXT, text);
+  await set(KEY_DSN_FILENAME, fileName);
+}
+
+export async function loadDsn() {
+  const text = await get(KEY_DSN_TEXT);
+  if (!text) return null;
+  return { text, fileName: (await get(KEY_DSN_FILENAME)) || "DSN" };
+}
+
+export async function clearDsn() {
+  await del(KEY_DSN_TEXT);
+  await del(KEY_DSN_FILENAME);
 }

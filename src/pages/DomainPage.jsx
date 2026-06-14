@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CriterionRow } from "@/components/audit/CriterionRow";
 import { StatusBadge } from "@/components/audit/StatusBadge";
 import { EvidenceSheet } from "@/components/audit/EvidenceSheet";
+import { DsnImport, DsnStatusBar } from "@/components/audit/DsnImport";
 import { useData } from "@/context/DataContext";
 import { STATUS_META } from "@/core/referentiel";
 import { toneFor } from "@/lib/audit-ui";
@@ -34,6 +35,8 @@ export default function DomainPage() {
   }
 
   const tone = toneFor(domain.status, STATUS_META);
+  // Le domaine santé n'est évaluable qu'avec une DSN. Si non alimenté → invite à l'import.
+  const santeSansDsn = key === "sante" && domain.score === null;
 
   return (
     <div className="space-y-6">
@@ -59,11 +62,17 @@ export default function DomainPage() {
         </div>
       </div>
 
-      <div className="space-y-3">
-        {domain.criteria.map((c) => (
-          <CriterionRow key={c.id} criterion={c} onShowEvidence={setEvidence} />
-        ))}
-      </div>
+      {key === "sante" && <DsnStatusBar />}
+
+      {santeSansDsn ? (
+        <DsnImport />
+      ) : (
+        <div className="space-y-3">
+          {domain.criteria.map((c) => (
+            <CriterionRow key={c.id} criterion={c} onShowEvidence={setEvidence} />
+          ))}
+        </div>
+      )}
 
       <EvidenceSheet
         open={!!evidence}

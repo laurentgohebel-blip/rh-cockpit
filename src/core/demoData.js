@@ -253,6 +253,26 @@ export function generateDemoEmployees() {
     }));
   });
 
+  // ─── Enrichissement DSN simulé (pour démontrer le domaine Santé) ───
+  // En usage réel, ces données viennent du croisement NIR avec une vraie DSN.
+  const actifs = list.filter((e) => e.actif);
+  actifs.forEach((e, idx) => {
+    const arrets = [];
+    if (idx % 6 === 2) arrets.push({ motif: "01", motifLabel: "Maladie", jours: 6 + (idx % 5) * 3 }); // ~1/6 en arrêt maladie
+    if (idx === 12) arrets.push({ motif: "05", motifLabel: "Accident du travail", jours: 24 }); // 1 AT
+    if (idx === 30) arrets.push({ motif: "05", motifLabel: "Accident du travail", jours: 9 }); // 2e AT → non-conforme
+    if (idx === 21) arrets.push({ motif: "02", motifLabel: "Maternité", jours: 31 }); // exclue de l'absentéisme maladie
+    e.dsn = {
+      arrets,
+      brut: Math.round((e.salaire || 0) * 1.3),
+      netVerse: Math.round((e.salaire || 0) * 0.78),
+      pcs: "684a",
+      natureDsn: e.cdd ? "02" : "01",
+      quotiteRef: 151.67,
+      quotiteTravail: e.tempsComplet ? 151.67 : 90,
+    };
+  });
+
   return list;
 }
 

@@ -127,7 +127,14 @@ export const SEUILS = {
   anciennete2ans: { vigilance: 40 },
   cddRatio: { vigilance: 20, alerte: 35 },
   demission: { vigilance: 40, alerte: 60 },
+  absenteisme: { vigilance: 5, alerte: 8 }, // % — moyenne nationale ~5% (maladie)
 };
+
+// Absentéisme (DSN bloc 60) — catégories de motifs
+const JOURS_OUVRES_MOIS = 21;
+const MOTIFS_MALADIE = new Set(["01", "08"]); // maladie + maladie de droit commun
+const MOTIFS_AT_MP = new Set(["05", "06", "07"]); // AT, maladie pro, accident de trajet
+// (motifs 02/03/04 = maternité/paternité/adoption → congés protégés, exclus de l'absentéisme)
 
 // Coefficient AGEFIPH par unité bénéficiaire manquante (× SMIC horaire)
 export function agefiphCoef(effectif) {
@@ -158,11 +165,15 @@ export const STATUS_META = {
 };
 
 // ─── Domaines pondérés ───
+// Le domaine « santé » n'est alimenté que si une DSN est importée ; sinon ses
+// critères ressortent « non concluant » et le domaine est exclu du score global
+// (renormalisation automatique sur les domaines évaluables).
 export const DOMAINS = [
-  { key: "conformite", label: "Conformité & obligations légales", icon: "⚖️", weight: 0.35 },
-  { key: "remuneration", label: "Rémunération & masse salariale", icon: "💰", weight: 0.25 },
-  { key: "mouvements", label: "Mouvements, fidélisation & climat", icon: "🔄", weight: 0.2 },
-  { key: "effectifs", label: "Effectifs, diversité & égalité", icon: "👥", weight: 0.2 },
+  { key: "conformite", label: "Conformité & obligations légales", icon: "⚖️", weight: 0.3 },
+  { key: "remuneration", label: "Rémunération & masse salariale", icon: "💰", weight: 0.22 },
+  { key: "sante", label: "Santé, sécurité & absentéisme", icon: "🏥", weight: 0.18 },
+  { key: "mouvements", label: "Mouvements, fidélisation & climat", icon: "🔄", weight: 0.16 },
+  { key: "effectifs", label: "Effectifs, diversité & égalité", icon: "👥", weight: 0.14 },
 ];
 
 // ─── Helpers locaux ───
@@ -902,6 +913,103 @@ export const CRITERIA = [
         valueLabel: `${pct.toFixed(1)}% d'encadrants (${managers.length}/${avecEmploi.length}) · 1 manager pour ${managers.length ? Math.round(avecEmploi.length / managers.length) : "—"} salariés`,
         threshold: "indicateur de structure",
         evidence: managers,
+      };
+    },
+  },
+
+  // ─────────────── SANTÉ & ABSENTÉISME (alimenté par la DSN) ───────────────
+  {
+    id: "absenteisme-maladie",
+    domain: "sante",
+    label: "Taux d'absentéisme maladie (sur le mois DSN)",
+    legalRef: "Indicateur Bilan social — source DSN bloc 60. Moyenne nationale ≈ 5%",
+    requiredFields: [], // gating custom : présence de données DSN
+    evaluate({ seuils = SEUILS, actifs }) {
+      const avecDsn = actifs.filter((e) => e.dsn);
+      if (avecDsn.length === 0)
+        return {
+          status: STATUS.nonConcluant,
+          value: null,
+          valueLabel: "Aucune DSN importée — importez une DSN pour activer ce domaine",
+          threshold: `≤ ${seuils.absenteisme.vigilance}%`,
+          evidence: [],
+        };
+      let joursMaladieCal = 0;
+      const concernes = [];
+      avecDsn.forEach((e) => {
+        const j = (e.dsn.arrets || []).filter((a) => MOTIFS_MALADIE.has(a.motif)).reduce((s, a) => s + (a.jours || 0), 0);
+        if (j > 0) { joursMaladieCal += j; concernes.push(e); }
+      });
+      // Conversion jours calendaires → jours ouvrés (≈ 5/7)
+      const joursOuvres = joursMaladieCal * (5 / 7);
+      const n = avecDsn.length;
+      const taux = n ? (joursOuvres / (n * JOURS_OUVRES_MOIS)) * 100 : 0;
+      const status = taux <= seuils.absenteisme.vigilance ? STATUS.conforme
+        : taux <= seuils.absenteisme.alerte ? STATUS.vigilance : STATUS.nonConforme;
+      return {
+        status,
+        value: taux,
+        valueLabel: `${taux.toFixed(1)}% sur le mois (${Math.round(joursMaladieCal)} j maladie · ${concernes.length} salarié${concernes.length > 1 ? "s" : ""} sur ${n} couverts par la DSN)`,
+        threshold: `≤ ${seuils.absenteisme.vigilance}%`,
+        evidence: concernes,
+      };
+    },
+  },
+  {
+    id: "accidents-travail",
+    domain: "sante",
+    label: "Accidents du travail & maladies professionnelles (sur le mois DSN)",
+    legalRef: "Art. L.4121-1 C. trav. — source DSN bloc 60 (motifs 05/06/07)",
+    requiredFields: [],
+    evaluate({ seuils = SEUILS, actifs }) {
+      const avecDsn = actifs.filter((e) => e.dsn);
+      if (avecDsn.length === 0)
+        return {
+          status: STATUS.nonConcluant,
+          value: null,
+          valueLabel: "Aucune DSN importée",
+          threshold: "0 AT/MP",
+          evidence: [],
+        };
+      const concernes = [];
+      let nbAt = 0, joursAt = 0;
+      avecDsn.forEach((e) => {
+        const ats = (e.dsn.arrets || []).filter((a) => MOTIFS_AT_MP.has(a.motif));
+        if (ats.length) { concernes.push(e); nbAt += ats.length; joursAt += ats.reduce((s, a) => s + (a.jours || 0), 0); }
+      });
+      const status = nbAt === 0 ? STATUS.conforme : nbAt <= 1 ? STATUS.vigilance : STATUS.nonConforme;
+      return {
+        status,
+        value: nbAt,
+        valueLabel: nbAt
+          ? `${nbAt} arrêt${nbAt > 1 ? "s" : ""} AT/MP · ${joursAt} jours d'arrêt (${concernes.length} salarié${concernes.length > 1 ? "s" : ""})`
+          : "Aucun AT/MP déclaré sur le mois",
+        threshold: "0 AT/MP",
+        evidence: concernes,
+      };
+    },
+  },
+  {
+    id: "absenteisme-detail",
+    domain: "sante",
+    label: "Répartition des absences par motif (sur le mois DSN)",
+    legalRef: "Source DSN bloc 60 — informatif",
+    requiredFields: [],
+    evaluate({ actifs }) {
+      const avecDsn = actifs.filter((e) => e.dsn);
+      if (avecDsn.length === 0)
+        return { status: STATUS.nonConcluant, value: null, valueLabel: "Aucune DSN importée", threshold: "", evidence: [] };
+      const parMotif = {};
+      avecDsn.forEach((e) => (e.dsn.arrets || []).forEach((a) => {
+        parMotif[a.motifLabel] = (parMotif[a.motifLabel] || 0) + (a.jours || 0);
+      }));
+      const entries = Object.entries(parMotif).sort((a, b) => b[1] - a[1]);
+      return {
+        status: STATUS.declaratif,
+        value: null,
+        valueLabel: entries.length ? entries.map(([k, v]) => `${k} : ${v} j`).join(" · ") : "Aucun arrêt sur le mois",
+        threshold: "répartition (mois)",
+        evidence: [],
       };
     },
   },

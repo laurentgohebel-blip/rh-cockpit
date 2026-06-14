@@ -45,6 +45,16 @@ const ACTION_LIBRARY = {
     charge: 8, deadline: 12, owner: "Direction",
     detail: "Identifier les viviers internes, sécuriser les passages au top management des femmes à potentiel, revoir les processus de promotion et le grading. Indicateur n°5 Index Égalité Pro F/H.",
   },
+  "absenteisme-maladie": {
+    action: "Plan de réduction de l'absentéisme maladie (prévention, conditions de travail)",
+    charge: 8, deadline: 6, owner: "Direction",
+    detail: "Analyser les causes (pénibilité, management, conditions), suivre l'absentéisme mensuel, mettre en place entretiens de retour, actions de prévention ciblées sur les postes à risque.",
+  },
+  "accidents-travail": {
+    action: "Renforcer la prévention des risques (DUERP, formations sécurité)",
+    charge: 6, deadline: 3, owner: "RH",
+    detail: "Analyser chaque AT/MP (arbre des causes), mettre à jour le DUERP, programmer les formations sécurité obligatoires, vérifier les EPI et la conformité des postes.",
+  },
   "decile-d9-d1": {
     action: "Revue de la dispersion salariale et de la grille de cotation",
     charge: 5, deadline: 6, owner: "RH",
