@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { computeMetrics } from "@/core/metrics";
 import { computeAudit } from "@/core/scoring";
-import { parseDsn, enrichWithDsn } from "@/core/dsnParser";
+import { parseDsn, enrichWithDsn, checkDsnCoherence } from "@/core/dsnParser";
 import { fmtDsnMois } from "@/lib/utils";
 import {
   loadEmployees,
@@ -74,6 +74,12 @@ export function DataProvider({ children }) {
     };
   }, [rawEmployees, dsn, dsnFileName]);
 
+  // Cohérence des sources (DSN mensuelle vs instantané paie)
+  const dsnCoherence = useMemo(
+    () => (rawEmployees && dsn ? checkDsnCoherence(rawEmployees, dsn) : null),
+    [rawEmployees, dsn]
+  );
+
   const metrics = useMemo(() => (employees ? computeMetrics(employees) : null), [employees]);
   const audit = useMemo(
     () => (metrics ? computeAudit(metrics, { sourceFile: fileName, profileId, sectorId, dsnMeta }) : null),
@@ -115,7 +121,7 @@ export function DataProvider({ children }) {
   const value = {
     loading, employees, fileName, profileId, sectorId, setSectorId,
     metrics, audit, ingest, reset,
-    dsn, dsnMeta, ingestDsn, removeDsn,
+    dsn, dsnMeta, dsnCoherence, ingestDsn, removeDsn,
   };
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

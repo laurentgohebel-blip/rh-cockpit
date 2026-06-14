@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CriterionRow } from "@/components/audit/CriterionRow";
 import { StatusBadge } from "@/components/audit/StatusBadge";
 import { EvidenceSheet } from "@/components/audit/EvidenceSheet";
-import { DsnImport, DsnStatusBar } from "@/components/audit/DsnImport";
+import { DsnImport, DsnStatusBar, CoherenceBanner } from "@/components/audit/DsnImport";
 import { useData } from "@/context/DataContext";
 import { STATUS_META } from "@/core/referentiel";
 import { toneFor } from "@/lib/audit-ui";
@@ -63,6 +63,7 @@ export default function DomainPage() {
       </div>
 
       {key === "sante" && <DsnStatusBar />}
+      {key === "sante" && <CoherenceBanner />}
 
       {santeSansDsn ? (
         <DsnImport />

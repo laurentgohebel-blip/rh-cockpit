@@ -183,6 +183,59 @@ export function enrichWithDsn(employees, dsn) {
   return { employees: enriched, matched, coverage: employees.length ? matched / employees.length : 0 };
 }
 
+// ─── Cohérence des sources (fréquences/périodes différentes) ───
+// La DSN est mensuelle ; le fichier de paie est un instantané sans date explicite.
+// On détecte les divergences de périmètre/période via le croisement NIR.
+const MOIS_FR_COH = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+export function checkDsnCoherence(employees, dsn) {
+  if (!dsn || !dsn.individus?.length) return null;
+  const actifs = (employees || []).filter((e) => e.actif);
+  const paieKeys = new Set(actifs.map((e) => nirKey(e.nir)).filter(Boolean));
+  const dsnKeys = dsn.individus.map((i) => i.nirKey).filter(Boolean);
+  const dsnKeySet = new Set(dsnKeys);
+
+  const matched = dsnKeys.filter((k) => paieKeys.has(k)).length;
+  const dsnOnly = dsnKeys.filter((k) => !paieKeys.has(k)).length;       // payés en DSN, absents de la paie
+  const paieOnly = [...paieKeys].filter((k) => !dsnKeySet.has(k)).length; // actifs paie sans ligne DSN
+
+  // Mois DSN + ancienneté du fichier par rapport à aujourd'hui
+  const m = String(dsn.meta.moisPrincipal || "").trim();
+  let moisLabel = "—", moisAgeMois = null;
+  if (/^\d{8}$/.test(m)) {
+    const mois = +m.slice(2, 4), annee = +m.slice(4, 8);
+    moisLabel = `${MOIS_FR_COH[mois - 1] || "?"} ${annee}`;
+    const now = new Date();
+    moisAgeMois = (now.getFullYear() - annee) * 12 + (now.getMonth() + 1 - mois);
+  }
+
+  const warnings = [];
+  const pctDsnOnly = dsn.individus.length ? dsnOnly / dsn.individus.length : 0;
+  if (pctDsnOnly > 0.15) {
+    warnings.push({
+      level: "warning",
+      message: `${dsnOnly} salarié${dsnOnly > 1 ? "s" : ""} déclaré${dsnOnly > 1 ? "s" : ""} dans la DSN ${dsnOnly > 1 ? "sont absents" : "est absent"} du fichier de paie. Les deux sources portent peut-être sur des périodes ou périmètres différents (sorties depuis l'export paie ? établissement distinct ?).`,
+    });
+  }
+  if (moisAgeMois != null && moisAgeMois >= 3) {
+    warnings.push({
+      level: "info",
+      message: `La DSN porte sur ${moisLabel}, soit il y a ~${moisAgeMois} mois. Vérifiez qu'elle est contemporaine du fichier de paie ; sinon les indicateurs croisés mélangent deux temporalités.`,
+    });
+  }
+
+  return {
+    dsnMois: moisLabel,
+    moisAgeMois,
+    dsnEffectif: dsn.individus.length,
+    paieEffectif: actifs.length,
+    matched,
+    dsnOnly,
+    paieOnly,
+    warnings,
+  };
+}
+
 // ─── Agrégats d'audit ───
 export function dsnAggregates(dsn) {
   const inds = dsn.individus;

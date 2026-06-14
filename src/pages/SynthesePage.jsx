@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
+import { CoherenceBanner } from "@/components/audit/DsnImport";
 import { ScoreRing } from "@/components/audit/ScoreRing";
 import { ReliabilityGauge } from "@/components/audit/ReliabilityGauge";
 import { DomainCard } from "@/components/audit/DomainCard";
@@ -38,6 +39,8 @@ export default function SynthesePage() {
 
   return (
     <div className="space-y-6">
+      <CoherenceBanner />
+
       <header>
         <h1 className="text-xl font-semibold tracking-tight">Synthèse d'audit social</h1>
         <p className="text-sm text-muted-foreground">Vue d'ensemble du score, des risques et des constats à traiter en priorité.</p>

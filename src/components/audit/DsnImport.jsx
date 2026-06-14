@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { FileUp, CheckCircle2, X } from "lucide-react";
+import { FileUp, CheckCircle2, X, AlertTriangle, Info, CalendarClock } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -87,9 +87,44 @@ export function DsnStatusBar() {
           {dsnMeta.idcc && ` · IDCC ${dsnMeta.idcc}`}
         </span>
       </div>
+      {/* Marquage temporel : la DSN est mensuelle, jamais annualisée */}
+      <span className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
+        <CalendarClock className="h-3 w-3" />1 mois — non annualisé
+      </span>
       <Button variant="ghost" size="sm" onClick={removeDsn} title="Retirer la DSN">
         <X className="h-3.5 w-3.5" />
       </Button>
+    </div>
+  );
+}
+
+// Bandeau d'alerte de cohérence des sources (périodes/fréquences différentes)
+export function CoherenceBanner() {
+  const { dsnCoherence } = useData();
+  if (!dsnCoherence || dsnCoherence.warnings.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {dsnCoherence.warnings.map((w, i) => {
+        const danger = w.level === "warning";
+        const Icon = danger ? AlertTriangle : Info;
+        return (
+          <div
+            key={i}
+            className={
+              "flex items-start gap-2 rounded-md border px-4 py-2.5 text-sm " +
+              (danger
+                ? "border-warning/30 bg-warning-soft text-warning"
+                : "border-info/30 bg-info-soft text-info")
+            }
+          >
+            <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <span className="font-medium">{danger ? "Cohérence des sources" : "À vérifier"} — </span>
+              <span className="text-foreground/80">{w.message}</span>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
