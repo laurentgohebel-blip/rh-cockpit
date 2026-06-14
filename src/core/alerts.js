@@ -5,6 +5,17 @@
 // ═══════════════════════════════════════════════════
 
 import { yearsDiff, fmtDate, NOW } from "./parser";
+import { SUIVI_MEDICAL_PERIODICITE_ANS, SUIVI_MEDICAL_ALERTE_JOURS } from "./referentiel";
+
+// ─────────────────────────────────────────────────────────────
+// FRONTIÈRE avec le référentiel d'audit :
+//   - alerts.js  = alertes OPÉRATIONNELLES datées / par salarié (échéances à
+//     traiter au quotidien : visite à renouveler, fin de période d'essai,
+//     entretien à planifier, départ retraite, médaille). Affichées sur /constats.
+//   - referentiel = CONSTATS d'audit (critères agrégés, notés, dans le score).
+// On ne duplique pas ici les obligations déjà couvertes par un critère
+// (RQTH, écart F/H, index égalité, CDD > 18 mois…).
+// ─────────────────────────────────────────────────────────────
 
 // ─── Priority levels ───
 export const PRIORITY = {
@@ -54,30 +65,30 @@ export function generateAlerts(employees) {
         deadline: null,
       });
     } else {
-      const daysAgo = Math.floor((NOW - e.visiteDate) / 864e5);
-      const daysUntil = -daysAgo;
+      // visiteDate = dernière visite. Échéance = + périodicité (alignée sur le critère).
+      const anneesDepuis = yearsDiff(e.visiteDate, NOW);
+      const joursAvantEcheance = (SUIVI_MEDICAL_PERIODICITE_ANS - anneesDepuis) * 365.25;
 
-      if (daysAgo > 0) {
-        // Expirée
+      if (anneesDepuis > SUIVI_MEDICAL_PERIODICITE_ANS) {
+        const joursDepasse = Math.floor(-joursAvantEcheance);
         alerts.push({
           id: taskId("vm-expired", e.id),
           category: "visite_medicale",
-          priority: daysAgo > 180 ? "urgent" : "high",
+          priority: joursDepasse > 180 ? "urgent" : "high",
           title: "Visite médicale expirée",
-          description: `Expirée depuis ${daysAgo} jours (${fmtDate(e.visiteDate)})`,
+          description: `Dernière visite le ${fmtDate(e.visiteDate)} (> ${SUIVI_MEDICAL_PERIODICITE_ANS} ans).`,
           employee: e,
           actionLabel: "Replanifier",
           deadline: e.visiteDate,
-          daysOverdue: daysAgo,
+          daysOverdue: joursDepasse,
         });
-      } else if (daysUntil <= 30) {
-        // Expire bientôt
+      } else if (joursAvantEcheance <= SUIVI_MEDICAL_ALERTE_JOURS) {
         alerts.push({
           id: taskId("vm-soon", e.id),
           category: "visite_medicale",
           priority: "high",
           title: "Visite médicale à renouveler",
-          description: `Expire dans ${daysUntil} jours (${fmtDate(e.visiteDate)})`,
+          description: `Échéance dans ~${Math.round(joursAvantEcheance)} jours (dernière le ${fmtDate(e.visiteDate)}).`,
           employee: e,
           actionLabel: "Planifier",
           deadline: e.visiteDate,
@@ -87,27 +98,7 @@ export function generateAlerts(employees) {
   });
 
   // ══════════════════════════════════
-  // 2. CDD EN COURS
-  // ══════════════════════════════════
-  const cddActifs = actifs.filter((e) => e.cdd);
-  cddActifs.forEach((e) => {
-    const monthsSinceEntry = e.dateEntree ? Math.floor(yearsDiff(e.dateEntree, NOW) * 12) : null;
-    alerts.push({
-      id: taskId("cdd", e.id),
-      category: "cdd",
-      priority: monthsSinceEntry != null && monthsSinceEntry >= 10 ? "urgent" : "high",
-      title: "CDD en cours — vérifier l'échéance",
-      description: e.dateEntree
-        ? `Entré le ${fmtDate(e.dateEntree)} (${monthsSinceEntry} mois). Renouvellement ou fin à prévoir.`
-        : "Date d'entrée inconnue",
-      employee: e,
-      actionLabel: "Traiter",
-      deadline: null,
-    });
-  });
-
-  // ══════════════════════════════════
-  // 3. PÉRIODES D'ESSAI
+  // 2. PÉRIODES D'ESSAI
   // ══════════════════════════════════
   actifs.forEach((e) => {
     if (!e.dateEntree) return;
@@ -213,53 +204,11 @@ export function generateAlerts(employees) {
     }
   });
 
-  // ══════════════════════════════════
-  // 6. CONFORMITÉ GLOBALE
-  // ══════════════════════════════════
-  // RQTH
-  if (n >= 20) {
-    const rqth = actifs.filter((e) => e.handicap).length;
-    const pct = (rqth / n) * 100;
-    if (pct < 6) {
-      alerts.push({
-        id: "conformite-rqth",
-        category: "conformite",
-        priority: pct < 3 ? "urgent" : "high",
-        title: `Obligation RQTH non respectée (${pct.toFixed(1)}%)`,
-        description: `${rqth} travailleurs handicapés sur ${n}. Obligation légale : 6%.`,
-        actionLabel: "Plan d'action",
-      });
-    }
-  }
-
-  // Index égalité H/F
-  if (n >= 50) {
-    alerts.push({
-      id: "conformite-index-egalite",
-      category: "conformite",
-      priority: "medium",
-      title: "Index égalité H/F à publier",
-      description: `${n} salariés → publication annuelle obligatoire (entreprises ≥ 50).`,
-      actionLabel: "Calculer",
-    });
-  }
-
-  // Taux de féminisation
-  const femmes = actifs.filter((e) => e.sexe === "Femme").length;
-  const pctF = n ? (femmes / n) * 100 : 50;
-  if (pctF > 75 || pctF < 25) {
-    alerts.push({
-      id: "conformite-feminisation",
-      category: "conformite",
-      priority: "medium",
-      title: `Déséquilibre H/F significatif (${pctF.toFixed(0)}% femmes)`,
-      description: `Impact sur l'index égalité et l'image employeur.`,
-      actionLabel: "Analyser",
-    });
-  }
+  // (Conformité RQTH / index égalité / féminisation : couverts par les critères
+  //  d'audit, non dupliqués ici — voir frontière en tête de fichier.)
 
   // ══════════════════════════════════
-  // 7. DOCUMENTS OBLIGATOIRES
+  // 5. DOCUMENTS OBLIGATOIRES
   // ══════════════════════════════════
   alerts.push({
     id: "doc-bdese",
