@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --color-border: hsl(220 13% 91%);
+  --color-input: hsl(220 13% 91%);
+  --color-ring: hsl(217 91% 60%);
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(222 47% 11%);
+
+  --color-primary: hsl(222 47% 11%);
+  --color-primary-foreground: hsl(0 0% 100%);
+
+  --color-secondary: hsl(220 14% 96%);
+  --color-secondary-foreground: hsl(222 47% 11%);
+
+  --color-muted: hsl(220 14% 96%);
+  --color-muted-foreground: hsl(220 9% 46%);
+
+  --color-accent: hsl(217 91% 60%);
+  --color-accent-foreground: hsl(0 0% 100%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(222 47% 11%);
+
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(222 47% 11%);
+
+  --color-success: hsl(160 84% 28%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-success-soft: hsl(160 67% 95%);
+
+  --color-warning: hsl(32 95% 44%);
+  --color-warning-foreground: hsl(0 0% 100%);
+  --color-warning-soft: hsl(43 96% 95%);
+
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-soft: hsl(0 86% 97%);
+
+  --color-info: hsl(217 91% 60%);
+  --color-info-foreground: hsl(0 0% 100%);
+  --color-info-soft: hsl(214 100% 97%);
+
+  --color-brand: hsl(217 91% 60%);
+  --color-brand-soft: hsl(214 100% 97%);
+
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 18mm 16mm 20mm;
+  }
+
+  html, body, #root {
+    height: auto;
+    background: white !important;
+  }
+
+  /* Cache la chrome applicative */
+  .no-print,
+  aside,
+  header[class*="border-b"]:not(.print-keep) { display: none !important; }
+
+  /* Le rapport prend toute la largeur, sans card, sans ombre */
+  main { padding: 0 !important; overflow: visible !important; }
+  .print-root { max-width: none !important; padding: 0 !important; }
+  .print-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .print-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* Préserve les couleurs des badges, anneaux, pastilles */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Pas d'animations / transitions à l'impression */
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  /* Liens en noir, sans soulignement, sans URL après */
+  a, a:visited { color: inherit !important; text-decoration: none !important; }
+
+  /* Tableaux : en-têtes répétés, lignes pas coupées en deux */
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; page-break-after: auto; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+
+  h1, h2, h3 { page-break-after: avoid; }
+}
