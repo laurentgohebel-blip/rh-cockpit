@@ -21,6 +21,11 @@ export const RETRAITE_AGES = { proche: 60, legal: 62, imminent: 64 };
 // À affiner plus tard avec la distinction par poste/risque.
 export const SUIVI_MEDICAL_PERIODICITE_ANS = 5;
 export const SUIVI_MEDICAL_ALERTE_JOURS = 90; // expire bientôt si < N jours avant échéance
+// Bilan professionnel obligatoire à 6 ans (Art. L.6315-1 C. trav.)
+// Sanction : abondement CPF de 3 000 € par salarié dont l'employeur n'aurait pas réalisé
+// les entretiens prévus + au moins 1 action de formation non obligatoire sur la période.
+export const BILAN_6_ANS_MIN_EFFECTIF = 50;
+export const BILAN_6_ANS_SANCTION_CPF = 3000;
 
 // ─── Helpers nationalité (UE/EEE/Suisse → libre circulation, pas de titre requis) ───
 const NORMALIZE = (s) => (s || "").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
@@ -200,6 +205,24 @@ export function trancheAnciennete(emp) {
   if (a == null) return null;
   return TRANCHES_ANCIENNETE.find((t) => a >= t.lo && a < t.hi);
 }
+
+// Tranches d'âge officielles Index Égalité Pro F/H (Décret 2019-15)
+export const TRANCHES_AGE_INDEX = [
+  { key: "<30", label: "< 30 ans", lo: 0, hi: 30 },
+  { key: "30-39", label: "30-39 ans", lo: 30, hi: 40 },
+  { key: "40-49", label: "40-49 ans", lo: 40, hi: 50 },
+  { key: "50+", label: "50 ans et +", lo: 50, hi: 200 },
+];
+export function trancheAgeIndex(emp) {
+  if (emp.age == null) return null;
+  return TRANCHES_AGE_INDEX.find((t) => emp.age >= t.lo && emp.age < t.hi);
+}
+
+// Seuils Index Égalité Pro indicateur n°1 — barème officiel adapté à notre échelle :
+//   - 0% à 5% (seuil tolérance CSP) → conforme (38-40 pts officiels)
+//   - 5% à 15%                      → vigilance (10-30 pts officiels)
+//   - > 15%                         → non-conforme (< 10 pts officiels)
+export const SEUIL_INDEX_TOLERANCE = 5; // %, seuil de tolérance par groupe (méthode CSP)
 
 // ═══════════════════════════════════════════════════
 // CRITÈRES
@@ -426,6 +449,54 @@ export const CRITERIA = [
       };
     },
   },
+  {
+    id: "bilan-6-ans",
+    domain: "conformite",
+    label: "Bilan professionnel à 6 ans (entretiens & formation)",
+    legalRef: `Art. L.6315-1 C. trav. — sanction CPF de ${BILAN_6_ANS_SANCTION_CPF.toLocaleString("fr-FR")} € par salarié sans bilan formalisé`,
+    requiredFields: ["dateEntree"],
+    // Logique : on ne peut pas savoir depuis le snapshot si les entretiens ont eu lieu.
+    // On signale tous les salariés ayant ≥ 6 ans d'ancienneté pour lesquels le bilan
+    // devrait être documenté. Statut déclaratif (auditeur valide), risque chiffré sur
+    // les salariés concernés (sanction CPF maximale potentielle).
+    evaluate({ seuils = SEUILS, actifs, metrics: m }) {
+      if ((m.totalActifs || 0) < BILAN_6_ANS_MIN_EFFECTIF)
+        return {
+          status: STATUS.nonApplicable,
+          value: null,
+          valueLabel: `Effectif < ${BILAN_6_ANS_MIN_EFFECTIF}`,
+          threshold: "Bilans formalisés tous les 6 ans",
+          evidence: [],
+        };
+      const concernes = actifs.filter((e) => e.anciennete != null && e.anciennete >= 6);
+      if (concernes.length === 0)
+        return {
+          status: STATUS.conforme,
+          value: 0,
+          valueLabel: "Aucun salarié à 6+ ans d'ancienneté — obligation non encore déclenchée",
+          threshold: "Bilans formalisés tous les 6 ans",
+          evidence: [],
+        };
+      return {
+        status: STATUS.declaratif,
+        value: concernes.length,
+        valueLabel: `${concernes.length} salarié${concernes.length > 1 ? "s" : ""} à 6+ ans d'ancienneté — vérifier les entretiens & le bilan formalisé`,
+        threshold: "Bilans formalisés tous les 6 ans",
+        evidence: concernes.sort((a, b) => b.anciennete - a.anciennete),
+      };
+    },
+    risk({ actifs, metrics: m }) {
+      if ((m.totalActifs || 0) < BILAN_6_ANS_MIN_EFFECTIF) return null;
+      const concernes = actifs.filter((e) => e.anciennete != null && e.anciennete >= 6);
+      if (concernes.length === 0) return null;
+      return {
+        amount: concernes.length * BILAN_6_ANS_SANCTION_CPF,
+        unit: "€",
+        label: `Abondement CPF max. — ${concernes.length} salarié${concernes.length > 1 ? "s" : ""} sans bilan documenté`,
+        basis: `${concernes.length} × ${BILAN_6_ANS_SANCTION_CPF.toLocaleString("fr-FR")} € (sanction Art. L.6323-13 C. trav.). Estimation maximale.`,
+      };
+    },
+  },
 
   // ─────────────── RÉMUNÉRATION ───────────────
   {
@@ -496,74 +567,85 @@ export const CRITERIA = [
   {
     id: "ecart-hf-emploi",
     domain: "remuneration",
-    label: "Écart salarial F/H ajusté par emploi et ancienneté",
-    legalRef: "Art. L.1142-7 C. trav. — à travail de valeur égale, salaire égal",
-    requiredFields: ["emploi", "salaire", "sexe"],
+    label: "Écart salarial F/H — indicateur n°1 Index Égalité Pro (40 pts officiels)",
+    legalRef: "Décret 2019-15 art. 1 — méthode CSP, tolérance 5% par groupe (emploi × tranche d'âge)",
+    requiredFields: ["emploi", "salaire", "sexe", "dateNaiss"],
     reliableThreshold: 0.5,
-    // Logique : on regroupe par (emploi × tranche d'ancienneté), on calcule l'écart
-    // intra-groupe quand il y a au moins 1 H et 1 F. On reporte la moyenne pondérée
-    // des écarts par effectif comparé.
+    // Implémentation de l'indicateur n°1 de l'Index Égalité Pro F/H :
+    //   - Regroupement par (CSP × tranche d'âge officielle <30/30-39/40-49/50+)
+    //   - Notre fichier n'a pas la CSP → on utilise « emploi » comme proxy
+    //   - Seuil de tolérance officiel : 5% par groupe (méthode CSP)
+    //   - Statut basé sur l'écart pondéré (40 pts si 0%, 0 pt si ≥ 20%)
     evaluate({ seuils = SEUILS, actifs }) {
       const avecEmploi = actifs.filter(
-        (e) => e.emploi && aUnSalaire(e) && (e.sexe === "Homme" || e.sexe === "Femme")
+        (e) => e.emploi && aUnSalaire(e) && (e.sexe === "Homme" || e.sexe === "Femme") && e.age != null
       );
       if (avecEmploi.length === 0)
         return {
           status: STATUS.nonConcluant,
           value: null,
-          valueLabel: "Colonne « emploi » absente ou non renseignée — comparaison ajustée impossible",
-          threshold: `≤ ${seuils.ecartHF.vigilance}% d'écart pondéré`,
+          valueLabel: "Colonne « emploi » absente — comparaison Index Égalité impossible",
+          threshold: `≤ ${SEUIL_INDEX_TOLERANCE}% par groupe (tolérance officielle)`,
           evidence: [],
         };
 
-      // Regroupement par (emploi normalisé × tranche)
+      // Regroupement par (emploi normalisé × tranche d'âge officielle)
       const groupes = new Map();
       avecEmploi.forEach((e) => {
-        const t = trancheAnciennete(e);
+        const t = trancheAgeIndex(e);
         if (!t) return;
         const key = `${e.emploi.toLowerCase().trim()}||${t.key}`;
-        if (!groupes.has(key)) groupes.set(key, { emploi: e.emploi, tranche: t.label, h: [], f: [] });
+        if (!groupes.has(key))
+          groupes.set(key, { emploi: e.emploi, tranche: t.label, trancheKey: t.key, h: [], f: [] });
         const g = groupes.get(key);
         const etp = salaireETP(e);
+        if (etp == null) return;
         if (e.sexe === "Homme") g.h.push(etp);
         else g.f.push(etp);
       });
 
-      // Garde uniquement les groupes comparables (≥1 H et ≥1 F)
-      const comparables = [...groupes.values()].filter((g) => g.h.length && g.f.length);
+      // Méthode officielle : seuls les groupes avec ≥ 3 H ET ≥ 3 F sont comparables
+      const comparables = [...groupes.values()].filter((g) => g.h.length >= 3 && g.f.length >= 3);
       if (comparables.length === 0)
         return {
           status: STATUS.nonConcluant,
           value: null,
-          valueLabel: "Aucun couple emploi×ancienneté avec H et F simultanément",
-          threshold: `≤ ${seuils.ecartHF.vigilance}% d'écart pondéré`,
+          valueLabel: "Aucun groupe (emploi × tranche d'âge) avec ≥ 3 H et ≥ 3 F",
+          threshold: `≤ ${SEUIL_INDEX_TOLERANCE}% par groupe`,
           evidence: [],
         };
 
-      // Écart moyen pondéré par effectif comparé du groupe
+      // Écart moyen pondéré par effectif total du groupe (méthode officielle)
       let sumWeight = 0, sumWeightedEcart = 0;
       const detail = [];
       comparables.forEach((g) => {
         const mh = moyenne(g.h), mf = moyenne(g.f);
         const ecart = mh ? ((mh - mf) / mh) * 100 : 0;
-        const w = Math.min(g.h.length, g.f.length); // poids = effectif comparé
+        // Application du seuil de tolérance par groupe (5%)
+        const ecartCorrige = Math.abs(ecart) <= SEUIL_INDEX_TOLERANCE ? 0 : ecart - Math.sign(ecart) * SEUIL_INDEX_TOLERANCE;
+        const w = g.h.length + g.f.length;
         sumWeight += w;
-        sumWeightedEcart += w * ecart;
-        detail.push({ emploi: g.emploi, tranche: g.tranche, ecart, w, mh, mf });
+        sumWeightedEcart += w * ecartCorrige;
+        detail.push({ emploi: g.emploi, tranche: g.tranche, trancheKey: g.trancheKey, ecart, ecartCorrige, w });
       });
       const ecartPondere = sumWeight ? sumWeightedEcart / sumWeight : 0;
       const abs = Math.abs(ecartPondere);
-      const status = abs <= seuils.ecartHF.vigilance
-        ? STATUS.conforme
-        : abs <= seuils.ecartHF.alerte ? STATUS.vigilance : STATUS.nonConforme;
 
-      // Évidence : les salariés des groupes où l'écart absolu dépasse le seuil de vigilance
+      // Barème officiel — adapté en 3 statuts
+      const status = abs <= SEUIL_INDEX_TOLERANCE
+        ? STATUS.conforme
+        : abs <= 15 ? STATUS.vigilance : STATUS.nonConforme;
+
+      // Points indicatifs sur 40 (barème officiel : 0% = 40 pts, 20%+ = 0 pt, linéaire)
+      const pointsIndex = Math.max(0, Math.round(40 * (1 - abs / 20)));
+
+      // Évidence : salariés des groupes où l'écart corrigé est non nul (dépasse le seuil)
       const groupesEcartes = new Set(
-        detail.filter((d) => Math.abs(d.ecart) > seuils.ecartHF.vigilance)
-          .map((d) => `${d.emploi.toLowerCase().trim()}||${TRANCHES_ANCIENNETE.find((t) => t.label === d.tranche)?.key}`)
+        detail.filter((d) => d.ecartCorrige !== 0)
+          .map((d) => `${d.emploi.toLowerCase().trim()}||${d.trancheKey}`)
       );
       const evidence = avecEmploi.filter((e) => {
-        const t = trancheAnciennete(e);
+        const t = trancheAgeIndex(e);
         if (!t) return false;
         return groupesEcartes.has(`${e.emploi.toLowerCase().trim()}||${t.key}`);
       });
@@ -571,9 +653,63 @@ export const CRITERIA = [
       return {
         status,
         value: ecartPondere,
-        valueLabel: `Écart pondéré ${ecartPondere > 0 ? "+" : ""}${ecartPondere.toFixed(1)}% sur ${comparables.length} couples emploi×ancienneté comparables`,
-        threshold: `≤ ${seuils.ecartHF.vigilance}% d'écart pondéré`,
+        valueLabel: `Écart pondéré ${ecartPondere > 0 ? "+" : ""}${ecartPondere.toFixed(1)}% (après tolérance 5%) · ${comparables.length} groupes comparables · ≈ ${pointsIndex}/40 pts Index`,
+        threshold: `≤ ${SEUIL_INDEX_TOLERANCE}% par groupe (tolérance officielle)`,
         evidence,
+      };
+    },
+    risk({ seuils = SEUILS, actifs, metrics: m }) {
+      // Pénalité Index Égalité non publié OU score < 75 : jusqu'à 1% de la masse salariale annuelle
+      // Ne s'applique qu'aux entreprises ≥ 50 salariés
+      if (m.totalActifs < 50) return null;
+      const masseAnnuelle = (m.masse || 0) * 12;
+      if (masseAnnuelle <= 0) return null;
+      return {
+        amount: Math.round(masseAnnuelle * 0.01),
+        unit: "€",
+        label: "Pénalité max. Index Égalité (publication absente ou score < 75/100 sans rattrapage)",
+        basis: "Jusqu'à 1% de la masse salariale annuelle (Art. L.2242-8 C. trav.)",
+      };
+    },
+  },
+  {
+    id: "decile-d9-d1",
+    domain: "remuneration",
+    label: "Rapport interdécile D9/D1 (équité salariale)",
+    legalRef: "Indicateur Bilan social (Art. R.2312-9 C. trav.) — médiane française tous secteurs ≈ 3,0",
+    requiredFields: ["salaire"],
+    // Calcule le ratio entre le 9e décile (90e centile) et le 1er décile (10e centile)
+    // des salaires ETP renseignés. Indicateur d'équité/dispersion salariale.
+    evaluate({ seuils = SEUILS, actifs }) {
+      const etps = actifs
+        .map((e) => salaireETP(e))
+        .filter((v) => v != null && v > 0)
+        .sort((a, b) => a - b);
+      if (etps.length < 10)
+        return {
+          status: STATUS.nonConcluant,
+          value: null,
+          valueLabel: "Moins de 10 salaires renseignés — indicateur non significatif",
+          threshold: "≤ 3,5 (médiane française)",
+          evidence: [],
+        };
+      // Méthode des centiles : interpolation linéaire
+      const percentile = (p) => {
+        const idx = (etps.length - 1) * p;
+        const lo = Math.floor(idx), hi = Math.ceil(idx);
+        return lo === hi ? etps[lo] : etps[lo] + (etps[hi] - etps[lo]) * (idx - lo);
+      };
+      const d1 = percentile(0.1);
+      const d9 = percentile(0.9);
+      const ratio = d1 ? d9 / d1 : 0;
+      const status = ratio <= 3.5 ? STATUS.conforme
+        : ratio <= 5 ? STATUS.vigilance : STATUS.nonConforme;
+      return {
+        status,
+        value: ratio,
+        valueLabel: `D9/D1 = ${ratio.toFixed(2)} · D9 ≈ ${Math.round(d9).toLocaleString("fr-FR")}€ · D1 ≈ ${Math.round(d1).toLocaleString("fr-FR")}€ (ETP)`,
+        threshold: "≤ 3,5 (médiane FR)",
+        evidence: [],
       };
     },
   },
@@ -735,6 +871,38 @@ export const CRITERIA = [
       const pct = n ? (c / n) * 100 : 0;
       const status = pct <= seuils.anciennete2ans.vigilance ? STATUS.conforme : STATUS.vigilance;
       return { status, value: pct, valueLabel: `${pct.toFixed(0)}% ont moins de 2 ans (${c}/${n})`, threshold: `≤ ${seuils.anciennete2ans.vigilance}%`, evidence: [] };
+    },
+  },
+  {
+    id: "taux-encadrement",
+    domain: "effectifs",
+    label: "Taux d'encadrement (managers / effectif)",
+    legalRef: "Indicateur de structure (ISO 30414 « Leadership ») — informatif",
+    requiredFields: ["emploi"],
+    reliableThreshold: 0.5,
+    // Détection des fonctions d'encadrement via le libellé d'emploi.
+    // Statut informatif (déclaratif) : on affiche le ratio sans le noter,
+    // car le « bon » taux dépend fortement de l'activité.
+    evaluate({ seuils = SEUILS, actifs }) {
+      const avecEmploi = actifs.filter((e) => e.emploi);
+      if (avecEmploi.length === 0)
+        return {
+          status: STATUS.nonConcluant,
+          value: null,
+          valueLabel: "Colonne « emploi » absente — taux d'encadrement non calculable",
+          threshold: "indicateur de structure",
+          evidence: [],
+        };
+      const ENCADREMENT = /directeur|directrice|manager|responsable|chef|encadrant|superviseur|cadre dirigeant/i;
+      const managers = avecEmploi.filter((e) => ENCADREMENT.test(e.emploi));
+      const pct = avecEmploi.length ? (managers.length / avecEmploi.length) * 100 : 0;
+      return {
+        status: STATUS.declaratif,
+        value: pct,
+        valueLabel: `${pct.toFixed(1)}% d'encadrants (${managers.length}/${avecEmploi.length}) · 1 manager pour ${managers.length ? Math.round(avecEmploi.length / managers.length) : "—"} salariés`,
+        threshold: "indicateur de structure",
+        evidence: managers,
+      };
     },
   },
 ];

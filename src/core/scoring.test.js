@@ -190,17 +190,33 @@ describe("computeAudit — moteur d'audit RH", () => {
     expect(c.status).toBe("non-concluant");
   });
 
-  test("ecart-hf-emploi — calcule un écart pondéré quand emploi est renseigné", () => {
-    // Mini-fixture : 1 emploi "Vendeur", tranche 2-5 ans, 2H et 2F avec écart 10%
+  test("ecart-hf-emploi — Index Égalité n°1 : écart brut 10% corrigé à 5% après tolérance", () => {
+    // Mini-fixture : 1 emploi "Vendeur", tranche d'âge 30-39, 5H et 5F avec écart brut 10%
     const fixture = [];
-    for (let i = 0; i < 5; i++) fixture.push(emp({ id: 600 + i, age: 30, anc: 3, emploi: "Vendeur", sexe: "Homme", salaire: 2000 }));
-    for (let i = 0; i < 5; i++) fixture.push(emp({ id: 650 + i, age: 30, anc: 3, emploi: "Vendeur", sexe: "Femme", salaire: 1800 }));
+    for (let i = 0; i < 5; i++) fixture.push(emp({ id: 600 + i, age: 35, anc: 3, emploi: "Vendeur", sexe: "Homme", salaire: 2000 }));
+    for (let i = 0; i < 5; i++) fixture.push(emp({ id: 650 + i, age: 35, anc: 3, emploi: "Vendeur", sexe: "Femme", salaire: 1800 }));
     const m = computeMetrics(fixture);
     const a = computeAudit(m);
     const c = a.domains.flatMap((d) => d.criteria).find((x) => x.id === "ecart-hf-emploi");
-    // Écart = (2000-1800)/2000 = 10% → exactement au seuil vigilance (10%) → conforme
+    // Écart brut 10% - tolérance officielle 5% = 5% écart corrigé → seuil exactement → conforme
     expect(c.status).toBe("conforme");
-    expect(Math.round(c.value)).toBe(10);
+    expect(Math.round(c.value)).toBe(5);
+    // Le valueLabel mentionne le barème officiel (40 pts max)
+    expect(c.valueLabel).toMatch(/pts Index/);
+  });
+
+  test("ecart-hf-emploi — non concluant si < 3 H ou < 3 F dans tous les groupes", () => {
+    // Mini-fixture : 2 H + 2 F dans un emploi/tranche → en dessous du seuil officiel 3+3
+    const fixture = [
+      emp({ id: 660, age: 35, anc: 3, emploi: "Vendeur", sexe: "Homme", salaire: 2000 }),
+      emp({ id: 661, age: 35, anc: 3, emploi: "Vendeur", sexe: "Homme", salaire: 2100 }),
+      emp({ id: 662, age: 35, anc: 3, emploi: "Vendeur", sexe: "Femme", salaire: 1900 }),
+      emp({ id: 663, age: 35, anc: 3, emploi: "Vendeur", sexe: "Femme", salaire: 1800 }),
+    ];
+    const m = computeMetrics(fixture);
+    const a = computeAudit(m);
+    const c = a.domains.flatMap((d) => d.criteria).find((x) => x.id === "ecart-hf-emploi");
+    expect(c.status).toBe("non-concluant");
   });
 
   test("turnover — exclut les fins normales de CDD du numérateur", () => {

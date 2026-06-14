@@ -25,6 +25,11 @@ const ACTION_LIBRARY = {
     charge: 5, deadline: 3, owner: "Légal/RH",
     detail: "Audit juridique de chaque CDD > 18 mois pour qualifier le risque de requalification et arrêter la stratégie au cas par cas.",
   },
+  "bilan-6-ans": {
+    action: "Formaliser le bilan professionnel à 6 ans pour les salariés concernés (entretiens + formation)",
+    charge: 6, deadline: 3, owner: "RH",
+    detail: "Pour chaque salarié à 6+ ans d'ancienneté, vérifier (a) la tenue des 3 entretiens professionnels obligatoires sur la période, (b) au moins une action de formation non obligatoire suivie, (c) une progression salariale ou professionnelle. Formaliser le récapitulatif écrit. À défaut : abondement CPF de 3 000 € par salarié.",
+  },
   "titre-sejour": {
     action: "Régulariser les titres expirés et anticiper les renouvellements (relance 90 jours avant échéance)",
     charge: 3, deadline: 1, owner: "RH",
@@ -39,6 +44,11 @@ const ACTION_LIBRARY = {
     action: "Plan de mixité dans les hautes rémunérations (talents féminins, mobilité interne)",
     charge: 8, deadline: 12, owner: "Direction",
     detail: "Identifier les viviers internes, sécuriser les passages au top management des femmes à potentiel, revoir les processus de promotion et le grading. Indicateur n°5 Index Égalité Pro F/H.",
+  },
+  "decile-d9-d1": {
+    action: "Revue de la dispersion salariale et de la grille de cotation",
+    charge: 5, deadline: 6, owner: "RH",
+    detail: "Si D9/D1 dépasse la médiane française (3,5), vérifier la cohérence de la grille des salaires avec la convention collective, les responsabilités effectives et le marché. Justifier objectivement les écarts importants.",
   },
   "ecart-hf-emploi": {
     action: "Plan de correction des écarts F/H à emploi et ancienneté égaux",
