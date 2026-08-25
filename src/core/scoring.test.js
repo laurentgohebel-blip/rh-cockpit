@@ -81,12 +81,22 @@ function buildEmployees() {
   list.push(emp({ id: id++, age: 45, anc: 2, dateSortie: yearsAgo(3) }));
 
   // Sorties récentes (alimentent turnover & motifs)
-  // Avant-dernière année close (cible du critère turnover) : 2 sorties dont 1 Fin de CDD
-  list.push(emp({ id: id++, age: 38, anc: 2, dateSortie: yearsAgo(0, 6), motifLabel: "Démission" })); // Déc 2025
-  list.push(emp({ id: id++, age: 29, anc: 1, dateSortie: yearsAgo(0, 7), motifLabel: "Fin de CDD" })); // Nov 2025 (à exclure)
-  // Année courante (incomplète) : 2 sorties
-  list.push(emp({ id: id++, age: 41, anc: 4, dateSortie: yearsAgo(0, 5), motifLabel: "Démission" }));
-  list.push(emp({ id: id++, age: 52, anc: 8, dateSortie: yearsAgo(0, 3), motifLabel: "Licenciement éco." }));
+  // ⚠ Dates ancrées sur l'ANNÉE CIVILE, jamais sur un décalage de mois.
+  // Un `yearsAgo(0, 6)` change d'année civile selon le mois où les tests
+  // tournent : écrit en juin il désignait décembre de l'année close ;
+  // rejoué en août il désigne février de l'année en cours — et le critère
+  // turnover, qui vise l'année close, ne trouvait plus aucune sortie.
+  // Un test qui rougit selon la saison apprend à ignorer le rouge.
+  const anneeClose = (mois, jour) => new Date(NOW.getFullYear() - 1, mois, jour);
+  // Année close (cible du critère turnover) : 2 sorties dont 1 Fin de CDD
+  list.push(emp({ id: id++, age: 38, anc: 2, dateSortie: anneeClose(5, 15), motifLabel: "Démission" }));
+  // anc ≥ 2 : l'entrée doit rester antérieure à la sortie, sinon on injecte
+  // sans le vouloir une anomalie « dates » que le test des anomalies compte.
+  list.push(emp({ id: id++, age: 29, anc: 2, dateSortie: anneeClose(4, 20), motifLabel: "Fin de CDD" })); // à exclure
+  // Année courante (incomplète) : 2 sorties — datées d'aujourd'hui, donc
+  // toujours dans l'année en cours quel que soit le jour d'exécution.
+  list.push(emp({ id: id++, age: 41, anc: 4, dateSortie: new Date(NOW), motifLabel: "Démission" }));
+  list.push(emp({ id: id++, age: 52, anc: 8, dateSortie: new Date(NOW), motifLabel: "Licenciement éco." }));
 
   // Salariés étrangers — couvre tous les cas du critère titre-sejour
   // 1 marocain avec carte de séjour valide 2 ans → conforme

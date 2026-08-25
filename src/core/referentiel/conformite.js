@@ -15,7 +15,12 @@ export const conformiteCriteria = [
     domain: "conformite",
     label: "Obligation d'emploi des travailleurs handicapés (OETH)",
     legalRef: "Art. L.5212-2 C. trav. — taux 6% (estimation snapshot, calcul ETP officiel à faire en DOETH)",
-    requiredFields: [],
+    // Sans donnée RQTH, ce critère ne peut PAS conclure : un fichier muet
+    // sur le handicap donnerait « 0 bénéficiaire » donc « non conforme »,
+    // avec une contribution AGEFIPH chiffrée à l'appui. Le gating le rend
+    // « non concluant », ce qui est la seule réponse honnête. Une DSN
+    // mensuelle est dans ce cas : elle ne porte pas le statut RQTH.
+    requiredFields: ["handicap"],
     // Calcul simplifié assumé : ratio nb RQTH / nb actifs à l'instant T.
     // L'effectif d'assujettissement OETH officiel est l'effectif moyen annuel ETP (3 ans glissants).
     // À affiner quand on aura des fichiers couvrant l'année entière (cf. roadmap ETP).

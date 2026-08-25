@@ -2,10 +2,14 @@
 // PARSER DSN (Déclaration Sociale Nominative)
 // Format normé NEODeS — fichier texte plat « rubrique,'valeur' ».
 // On extrait uniquement les blocs à forte valeur d'audit (pas toute la norme).
-// Rail 2 : ces données enrichissent le snapshot paie via le NIR (clé de jointure).
+//
+// DEUX USAGES :
+//   — ENRICHIR un snapshot de paie (`enrichWithDsn`, croisement par NIR) ;
+//   — SERVIR DE SOURCE À ELLE SEULE (`dsnToEmployees`), pour auditer une
+//     entreprise dont on n'a que les DSN.
 // ═══════════════════════════════════════════════════
 
-import { nirKey } from "./parser";
+import { nirKey, yearsDiff, NOW } from "./parser";
 
 // ─── Tables de libellés (codes normés DSN) ───
 export const MOTIFS_ARRET = {
@@ -151,6 +155,146 @@ export function parseDsn(text) {
 
   return { meta, individus };
 }
+
+// ═══════════════════════════════════════════════════
+// RAIL 2 AUTONOME — la DSN comme source PREMIÈRE
+//
+// Jusqu'ici la DSN ne pouvait qu'enrichir un snapshot de paie. Elle porte
+// pourtant l'essentiel du modèle universel : identité, contrats, quotités,
+// rémunérations, fins de contrat. `dsnToEmployees` en fait une source
+// autonome — on audite avec la paie, avec la DSN, ou avec les deux.
+//
+// CE QUE LA DSN MENSUELLE NE PORTE PAS, et qui doit rester VIDE plutôt que
+// faussement à zéro : suivi médical, RQTH, nationalité et titres de séjour.
+// Ces champs sortent à `null` : les critères qui en dépendent deviennent
+// « non concluants » au lieu de conclure « non conforme » sur une donnée
+// absente. Un rapport ne doit jamais reprocher à une entreprise ce que le
+// fichier ne permettait pas de vérifier.
+// ═══════════════════════════════════════════════════
+
+// Origine de chaque champ d'un salarié, pour que le rapport puisse dire
+// d'où vient un constat. Un critère lu depuis la DSN (déclaratif officiel)
+// et le même lu depuis un export de paie n'ont pas la même force.
+export const SOURCE = { paie: "paie", dsn: "dsn", absent: "absent" };
+
+// Champs qu'une DSN mensuelle ne contient pas.
+export const CHAMPS_HORS_DSN = ["visiteDate", "handicap", "nationalite", "etranger",
+  "cartesSejourNumero", "cartesSejourFin", "cartesTravailNumero", "cartesTravailFin"];
+
+// Le contrat retenu pour la fiche : le plus récemment commencé.
+const contratCourant = (contrats) =>
+  [...(contrats || [])].filter((c) => c.dateDebut).sort((a, b) => b.dateDebut - a.dateDebut)[0]
+  || (contrats || [])[0] || {};
+
+// L'ancienneté se compte depuis le PREMIER contrat connu, pas depuis le dernier :
+// un salarié enchaînant trois CDD n'a pas trois mois d'ancienneté.
+const premiereEntree = (contrats) =>
+  [...(contrats || [])].filter((c) => c.dateDebut).sort((a, b) => a.dateDebut - b.dateDebut)[0]?.dateDebut || null;
+
+export function dsnToEmployees(dsn, { motifLabels = {} } = {}) {
+  if (!dsn || !dsn.individus?.length) return [];
+  const nic = dsn.meta?.nic || "";
+
+  return dsn.individus.map((ind, idx) => {
+    const c = contratCourant(ind.contrats);
+    const entree = premiereEntree(ind.contrats);
+    // Fin de contrat la plus récente : c'est elle qui rend le salarié inactif.
+    const fin = [...(ind.finsContrat || [])].filter((f) => f.dateFin).sort((a, b) => b.dateFin - a.dateFin)[0] || null;
+    const motifCode = fin && /^\d+$/.test(String(fin.motif)) ? parseInt(fin.motif, 10) : null;
+
+    // Temps partiel : la quotité travaillée rapportée à la quotité de
+    // référence de l'établissement. Sans quotité de référence, on ne
+    // tranche pas — `null` plutôt qu'un « temps complet » supposé.
+    const qRef = c.quotiteRef, qTrav = c.quotiteTravail;
+    const tempsComplet = qRef != null && qRef > 0 && qTrav != null ? qTrav >= qRef : null;
+
+    const brut = ind.versement?.brut ?? null;
+
+    return {
+      id: idx,
+      nom: ind.nom || "",
+      prenom: ind.prenom || "",
+      sexe: ind.sexe || "",
+      dateNaiss: ind.dateNaiss || null,
+      age: ind.dateNaiss ? Math.floor(yearsDiff(ind.dateNaiss, NOW)) : null,
+      dateEntree: entree,
+      anciennete: entree ? Math.round(yearsDiff(entree, NOW) * 10) / 10 : null,
+      dateSortie: fin?.dateFin || null,
+      etab: nic,
+      service: "",
+      cdd: c.nature === "02",
+      // Hors DSN mensuelle → null, jamais false (voir l'en-tête de section).
+      handicap: null,
+      tempsComplet,
+      // Le brut du mois n'est pas le salaire de base contractuel : il inclut
+      // primes et heures supplémentaires. On le reprend faute de mieux, et
+      // la provenance le dit — un écart salarial calculé sur du brut mensuel
+      // se lit autrement qu'un écart calculé sur des salaires de base.
+      salaire: brut,
+      heures: qTrav ?? null,
+      ville: "", cp: "",
+      motifCode,
+      motifLabel: (motifCode != null && motifLabels[motifCode]) || MOTIFS_FIN_CONTRAT[String(fin?.motif || "").padStart(3, "0")] || (fin ? `Code ${fin.motif}` : "Non renseigné"),
+      visiteDate: null,
+      actif: !fin,
+      email: "", tel: "", voie: "",
+      pctActivite: qRef != null && qRef > 0 && qTrav != null ? Math.round((qTrav / qRef) * 100) : null,
+      emploi: c.libelleEmploi || c.pcs || "",
+      nir: ind.nir || "",
+      nationalite: "", etranger: null,
+      cartesSejourNumero: "", cartesSejourFin: null,
+      cartesTravailNumero: "", cartesTravailFin: null,
+      // Les données propres à la DSN restent accessibles aux critères.
+      dsn: {
+        arrets: ind.arrets, suspensions: ind.suspensions,
+        brut, netVerse: ind.versement?.netVerse ?? null,
+        pcs: c.pcs || "", natureDsn: c.nature || "",
+        quotiteRef: qRef, quotiteTravail: qTrav,
+        contrats: ind.contrats || [], finsContrat: ind.finsContrat || [],
+      },
+      _src: sourceMap(SOURCE.dsn),
+    };
+  });
+}
+
+// Marque la provenance de chaque champ du modèle.
+function sourceMap(origine) {
+  const m = {};
+  for (const champ of CHAMPS_MODELE) m[champ] = origine;
+  if (origine === SOURCE.dsn) for (const champ of CHAMPS_HORS_DSN) m[champ] = SOURCE.absent;
+  return m;
+}
+
+const CHAMPS_MODELE = ["nom", "prenom", "sexe", "dateNaiss", "dateEntree", "dateSortie",
+  "motifLabel", "etab", "service", "cdd", "handicap", "tempsComplet", "salaire", "heures",
+  "ville", "cp", "visiteDate", "emploi", "nir", "nationalite", "etranger",
+  "cartesSejourNumero", "cartesSejourFin", "cartesTravailNumero", "cartesTravailFin"];
+
+/* Motifs de rupture DSN (bloc « fin de contrat »).
+   ⚠ Table de LIBELLÉS, à confronter au cahier technique NEODeS en vigueur :
+   la nomenclature évolue d'une version à l'autre. Un code absent de cette
+   table s'affiche tel quel (« Code 062 ») plutôt que d'être traduit à tort. */
+export const MOTIFS_FIN_CONTRAT = {
+  "011": "Licenciement suite à liquidation ou redressement judiciaire",
+  "012": "Licenciement pour motif économique",
+  "014": "Licenciement pour fin de chantier",
+  "015": "Licenciement pour autre motif",
+  "020": "Fin de CDD",
+  "025": "Fin de période d'essai à l'initiative de l'employeur",
+  "026": "Fin de période d'essai à l'initiative du salarié",
+  "031": "Démission",
+  "034": "Prise d'acte de la rupture",
+  "035": "Rupture conventionnelle",
+  "036": "Départ à la retraite à l'initiative du salarié",
+  "037": "Mise à la retraite par l'employeur",
+  "038": "Rupture pour force majeure",
+  "039": "Rupture d'un commun accord",
+  "043": "Rupture conventionnelle collective",
+  "059": "Rupture anticipée d'un CDD",
+  "065": "Décès",
+  "081": "Fin de contrat d'apprentissage",
+  "084": "Fin de contrat de professionnalisation",
+};
 
 // ─── Croisement DSN ↔ snapshot paie (par NIR) ───
 // Attache à chaque salarié rapproché un objet `dsn` exploitable par les critères.
