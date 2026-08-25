@@ -7,8 +7,17 @@
 import { NOW } from "./parser";
 
 // Champs porteurs d'une sémantique « renseigné / absent » exploitable.
-// (Les booléens normalisés comme cdd/handicap ne sont pas mesurables ici.)
+//
+// `handicap` en fait désormais partie, parce qu'il peut valoir `null` :
+// une DSN mensuelle ne porte pas le statut RQTH, et un export de paie sans
+// colonne dédiée non plus. Sans ce gating, l'absence de donnée se lisait
+// comme « aucun bénéficiaire » et le critère OETH concluait « non
+// conforme » avec une contribution AGEFIPH chiffrée en euros — un reproche
+// fondé sur une information qu'on n'avait pas.
+// Les autres booléens (cdd, tempsComplet) restent hors complétude tant que
+// leur `false` ne se distingue pas d'un « non renseigné ».
 const COMPLETENESS_FIELDS = [
+  { field: "handicap", label: "Statut RQTH / travailleur handicapé", filled: (e) => e.handicap != null },
   { field: "sexe", label: "Sexe", filled: (e) => e.sexe === "Homme" || e.sexe === "Femme" },
   { field: "dateNaiss", label: "Date de naissance", filled: (e) => !!e.dateNaiss },
   { field: "dateEntree", label: "Date d'entrée", filled: (e) => !!e.dateEntree },

@@ -128,13 +128,19 @@ export function parseWithMapping(dataRows, mapping) {
         tempsRaw === "oui" ||
         tempsRaw === "100%";
 
-      // Handicap detection (flexible)
+      // Handicap : `null` quand la colonne n'est pas mappée — jamais
+      // `false`. Un fichier sans colonne RQTH ne dit pas « aucun
+      // bénéficiaire », il ne dit rien ; et le critère OETH chiffre une
+      // contribution AGEFIPH sur cette donnée. Une cellule vide dans une
+      // colonne mappée reste un « non », comme avant.
+      const handicapMappe = mapping.handicap != null && mapping.handicap >= 0;
       const handicapRaw = g(r, "handicap").toLowerCase();
-      const isHandicap =
-        handicapRaw === "oui" ||
-        handicapRaw === "true" ||
-        handicapRaw === "1" ||
-        handicapRaw.includes("rqth");
+      const isHandicap = !handicapMappe
+        ? null
+        : handicapRaw === "oui" ||
+          handicapRaw === "true" ||
+          handicapRaw === "1" ||
+          handicapRaw.includes("rqth");
 
       // Motif de sortie
       const motifRaw = g(r, "motifSortie");

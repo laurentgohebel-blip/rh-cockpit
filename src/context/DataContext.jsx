@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { computeMetrics } from "@/core/metrics";
 import { computeAudit } from "@/core/scoring";
-import { parseDsn, enrichWithDsn, checkDsnCoherence } from "@/core/dsnParser";
+import { parseDsn, checkDsnCoherence } from "@/core/dsnParser";
+import { construireEffectif, couvertureAudit } from "@/core/sources";
 import { fmtDsnMois } from "@/lib/utils";
 import {
   loadEmployees,
@@ -55,24 +56,33 @@ export function DataProvider({ children }) {
     return () => { alive = false; };
   }, []);
 
-  // Enrichissement : croise le snapshot paie avec la DSN par NIR
-  const { employees, dsnMeta } = useMemo(() => {
-    if (!rawEmployees) return { employees: null, dsnMeta: null };
-    if (!dsn) return { employees: rawEmployees, dsnMeta: null };
-    const { employees: enriched, matched, coverage } = enrichWithDsn(rawEmployees, dsn);
+  // Construction de l'effectif à auditer : paie seule, DSN seule, ou les
+  // deux (la paie mène, la DSN comble — voir la règle de préséance dans
+  // core/sources.js). C'est ici que la DSN cesse d'être un simple
+  // enrichissement pour devenir une source de plein droit.
+  const { employees, mode, dsnMeta } = useMemo(() => {
+    const r = construireEffectif({ paie: rawEmployees, dsn });
+    if (!r.employees) return { employees: null, mode: null, dsnMeta: null };
     return {
-      employees: enriched,
-      dsnMeta: {
-        fileName: dsnFileName,
-        mois: fmtDsnMois(dsn.meta.moisPrincipal),
-        idcc: dsn.meta.idcc,
-        raisonSociale: dsn.meta.raisonSociale,
-        nbIndividus: dsn.individus.length,
-        matched,
-        coverage,
-      },
+      employees: r.employees,
+      mode: r.mode,
+      dsnMeta: dsn
+        ? {
+            fileName: dsnFileName,
+            mois: fmtDsnMois(dsn.meta.moisPrincipal),
+            idcc: dsn.meta.idcc,
+            raisonSociale: dsn.meta.raisonSociale,
+            nbIndividus: dsn.individus.length,
+            matched: r.rapproches,
+            coverage: rawEmployees?.length ? r.rapproches / rawEmployees.length : 0,
+            comblements: r.comblements,
+          }
+        : null,
     };
   }, [rawEmployees, dsn, dsnFileName]);
+
+  // Ce que la source permet — et ne permet pas — d'auditer.
+  const couverture = useMemo(() => couvertureAudit(employees, mode), [employees, mode]);
 
   // Cohérence des sources (DSN mensuelle vs instantané paie)
   const dsnCoherence = useMemo(
@@ -116,12 +126,14 @@ export function DataProvider({ children }) {
     setDsn(null);
     setDsnFileName("");
     clearEmployees();
+    clearDsn();
   }, []);
 
   const value = {
     loading, employees, fileName, profileId, sectorId, setSectorId,
     metrics, audit, ingest, reset,
     dsn, dsnMeta, dsnCoherence, ingestDsn, removeDsn,
+    mode, couverture,
   };
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

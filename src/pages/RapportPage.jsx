@@ -27,7 +27,7 @@ function SectionTitle({ number, title, subtitle }) {
 }
 
 export default function RapportPage() {
-  const { audit, metrics } = useData();
+  const { audit, metrics, couverture } = useData();
   const brand = useBrand();
 
   if (!audit) return null;
@@ -95,11 +95,39 @@ export default function RapportPage() {
             </div>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Référentiel</p>
-              <p className="mt-1 text-2xl font-semibold">{audit.domains.reduce((s, d) => s + d.criteria.length, 0)}</p>
+              {/* On distingue les critères RÉELLEMENT évalués du total : un
+                  critère faute de données n'a pas été examiné, et le rapport
+                  ne doit pas le compter comme s'il l'avait été. */}
+              <p className="mt-1 text-2xl font-semibold">
+                {couverture ? `${couverture.evaluables} / ${couverture.total}` : audit.domains.reduce((s, d) => s + d.criteria.length, 0)}
+              </p>
               <p className="text-xs text-muted-foreground">critères évalués</p>
             </div>
           </div>
         </div>
+
+        {/* Périmètre et limites — en PREMIÈRE page, avant tout constat.
+            Un lecteur qui ne voit aucun reproche sur le suivi médical doit
+            comprendre que la question n'a pas été examinée, jamais qu'elle
+            est conforme. L'absence de constat n'est pas un quitus. */}
+        {couverture?.nonEvaluables?.length > 0 && (
+          <div className="mt-8 rounded-md border border-foreground/15 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Périmètre et limites
+            </p>
+            <p className="mt-2 text-sm">
+              Cet audit a été mené à partir de : <strong>{couverture.modeLabel}</strong>.
+              {" "}{couverture.avertissement}
+            </p>
+            <ul className="mt-2 list-disc pl-5 text-xs text-muted-foreground">
+              {couverture.nonEvaluables.map((c) => (
+                <li key={c.id}>
+                  <strong className="text-foreground">{c.label}</strong> — {c.cause}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <footer className="border-t border-foreground/10 pt-3 text-xs text-muted-foreground">
           <p>Document confidentiel — usage interne client</p>
