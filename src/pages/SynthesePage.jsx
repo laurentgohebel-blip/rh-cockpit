@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { CoherenceBanner } from "@/components/audit/DsnImport";
+import { CouvertureBanner } from "@/components/audit/CouvertureBanner";
 import { ScoreRing } from "@/components/audit/ScoreRing";
 import { ReliabilityGauge } from "@/components/audit/ReliabilityGauge";
 import { DomainCard } from "@/components/audit/DomainCard";
@@ -17,7 +18,7 @@ import { buildActionPlan } from "@/core/actions";
 import { toneFor } from "@/lib/audit-ui";
 
 export default function SynthesePage() {
-  const { audit } = useData();
+  const { audit, couverture } = useData();
   const [evidence, setEvidence] = useState(null);
 
   if (!audit) return null;
@@ -39,6 +40,7 @@ export default function SynthesePage() {
 
   return (
     <div className="space-y-6">
+      <CouvertureBanner couverture={couverture} />
       <CoherenceBanner />
 
       <header>

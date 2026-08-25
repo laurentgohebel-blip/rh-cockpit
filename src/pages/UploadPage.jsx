@@ -12,10 +12,34 @@ import { useData } from "@/context/DataContext";
 import { cn } from "@/lib/utils";
 
 export default function UploadPage() {
-  const { ingest } = useData();
+  const { ingest, ingestDsn } = useData();
   const navigate = useNavigate();
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Une DSN suffit à ouvrir un audit : elle porte l'identité, les
+  // contrats, les quotités et les rémunérations. Ce qu'elle ne porte pas
+  // — suivi médical, RQTH, titres de séjour — sera annoncé comme non
+  // examiné plutôt que conclu à tort (voir core/sources.js).
+  const handleDsn = useCallback(async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const texte = await file.text();
+      const parsed = ingestDsn(texte, file.name);
+      const n = parsed?.individus?.length || 0;
+      if (!n) {
+        toast.error("Aucun salarié trouvé dans ce fichier — s'agit-il bien d'une DSN ?");
+        return;
+      }
+      toast.success(`DSN lue · ${n} salarié${n > 1 ? "s" : ""}`);
+      navigate("/audit");
+    } catch (e) {
+      toast.error("Lecture de la DSN impossible : " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [ingestDsn, navigate]);
 
   const handleFile = useCallback(async (file) => {
     if (!file) return;
@@ -133,6 +157,34 @@ export default function UploadPage() {
           </Button>
         </label>
         <p className="mt-4 text-xs text-muted-foreground">Formats supportés : .xlsx, .xls</p>
+      </Card>
+
+      {/* Entrée DSN — source de plein droit, pas seulement un complément */}
+      <Card className="mt-4 flex items-center gap-4 p-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-accent/10">
+          <FileSpreadsheet className="h-5 w-5 text-accent" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold">Vous n'avez qu'une DSN ?</p>
+          <p className="text-xs text-muted-foreground">
+            Elle suffit à lancer l'audit : identité, contrats, quotités et rémunérations en sont
+            extraits. Le suivi médical, le statut RQTH et les titres de séjour n'y figurent pas —
+            les critères correspondants seront annoncés comme <strong>non examinés</strong>, jamais
+            présumés conformes.
+          </p>
+        </div>
+        <label>
+          <input
+            type="file"
+            accept=".dsn,.txt"
+            className="hidden"
+            onChange={(e) => handleDsn(e.target.files?.[0])}
+            disabled={busy}
+          />
+          <Button asChild disabled={busy} variant="outline">
+            <span>Charger une DSN</span>
+          </Button>
+        </label>
       </Card>
 
       {/* Démo */}

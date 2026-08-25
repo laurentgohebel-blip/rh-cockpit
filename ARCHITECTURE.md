@@ -24,10 +24,11 @@ Interface    pages/* → components/{audit, ui, layout}
 |---|---|
 | `parser.js` | Lit le .xlsx, normalise les employés, helpers dates + `nirKey()` (clé de jointure DSN) |
 | `profiles.js` | 7 profils logiciels paie + `FIELDS` (modèle universel) + auto-mapping des colonnes |
-| `dsnParser.js` | Parse la DSN normée, `enrichWithDsn()` (croisement NIR), `checkDsnCoherence()` |
+| `dsnParser.js` | Parse la DSN normée, `dsnToEmployees()` (DSN comme source autonome), `enrichWithDsn()`, `checkDsnCoherence()` |
 | `metrics.js` | Agrégats consommés par le moteur + la page Analyses (pyramide, ancienneté, turnover…) |
 | `referentiel/` | **Le cœur** : domaines pondérés + ~17 critères. Voir ci-dessous. |
 | `scoring.js` | `computeAudit(metrics, meta)` → score global/domaines, fiabilité, risques, anomalies |
+| `sources.js` | Choisit l'effectif à auditer selon les sources, applique la préséance, calcule la couverture |
 | `dataQuality.js` | Complétude par champ + détection d'anomalies |
 | `sectors.js` | Benchmark sectoriel (seuils ajustés + médianes par critère) |
 | `actions.js` | Bibliothèque d'actions recommandées par critère → plan d'action |
@@ -76,12 +77,45 @@ Découpé par domaine pour rester lisible :
 6. Test → étendre `scoring.test.js` (fixture + assertion).
 7. Le critère apparaît **automatiquement** dans la Synthèse, la page Domaine et le Rapport.
 
-## Deux rails d'ingestion
+## Deux rails d'ingestion, trois modes d'audit
 
-- **Rail 1 — fichier de paie (.xlsx)** : source principale, un instantané. Croisé par NIR.
-- **Rail 2 — DSN (.dsn)** : mensuelle, enrichit le snapshot (absentéisme, AT/MP, PCS-ESE,
-  masse salariale fine). Alimente le domaine **Santé**. Croisement par `nirKey` (13 chiffres).
+Chaque source peut mener un audit **à elle seule** (`core/sources.js`) :
+
+| Mode | Source | Effectif construit par |
+|---|---|---|
+| `paie` | fichier .xlsx seul | `parseWithMapping()` |
+| `dsn` | fichier .dsn seul | `dsnToEmployees()` |
+| `mixte` | les deux | la paie, complétée par la DSN |
+
+- **Rail 1 — fichier de paie (.xlsx)** : instantané, porte le salaire de BASE et les
+  données que la DSN ignore (suivi médical, RQTH, titres de séjour).
+- **Rail 2 — DSN (.dsn)** : mensuelle, porte identité, contrats, quotités, arrêts,
+  AT/MP, PCS-ESE et le BRUT VERSÉ. Croisement par `nirKey` (13 chiffres).
   ⚠️ Fréquences différentes → `checkDsnCoherence()` alerte si périodes/périmètres divergent.
+
+### Règle de préséance (mode mixte)
+
+**La paie mène, la DSN comble.** Ce n'est pas une commodité :
+
+- le fichier de paie porte le salaire de **base** contractuel, la DSN le **brut versé**
+  du mois (primes et heures supplémentaires comprises). L'écart de rémunération de
+  l'Index Égalité — 40 points — se calcule sur la base : écraser l'un par l'autre
+  fausserait l'indicateur ;
+- la paie porte des champs absents de la DSN mensuelle.
+
+La DSN remplit tout champ que la paie a laissé vide (`CHAMPS_COMBLABLES`), et ses
+données propres restent attachées sous `e.dsn`. Chaque champ porte sa provenance dans
+`e._src` : `paie`, `dsn` ou `absent`.
+
+### Couverture — ce qui n'a PAS été audité
+
+`couvertureAudit()` rejoue le gating de `computeAudit()` (mêmes `requiredFields`, même
+seuil) et liste les critères inévaluables **avec leur cause**. Affiché en tête de la
+Synthèse (`CouvertureBanner`) et en première page du Rapport.
+
+> Un lecteur qui ne voit aucun constat sur le suivi médical doit comprendre que la
+> question n'a pas été examinée — jamais qu'elle est conforme. L'absence de reproche
+> n'est pas un quitus, et c'est à l'outil de le dire.
 
 ## Frontière alertes ↔ constats
 
